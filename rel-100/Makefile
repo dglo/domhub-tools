@@ -1,11 +1,7 @@
-SUBDIRS=domhub-tools domhub-testing
-RELEASE=rel-$(shell /bin/bash -c 'cat rel.num' )
+SUBDIRS=domhub-tools domhub-testing moat domapp
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
-
-rpm:
-	./dorpm $(RELEASE)
 
 clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
@@ -25,3 +21,4 @@ release: clean
 	@echo "created: domhub-tools-`cat rel.num`.tar.gz"
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
+	
