@@ -9,12 +9,6 @@ open-test: open-test.c
 clean:
 	rm -f echo-test open-test
 
-<<<<<<< Makefile
-install:
-	mkdir -p /usr/local/share/domhub-testing
-	cp * /usr/local/share/domhub-testing
-
-=======
 BIN=echo-test open-test
 TESTS=current-test.sh domid-test.sh echo-test.sh echo-throttle-test.sh \
 	fpga-reload-test.sh quiet-test.sh run-test.sh sink-test.sh \
@@ -37,4 +31,3 @@ install: all
 		ln -f throughput-AB.sh throughput-B-results.sh
 	@mkdir -p /usr/local/bin
 	ln -f /usr/local/share/domhub-testing/run-mjb.sh /usr/local/bin/run-mjb
->>>>>>> 1.6
