@@ -6,7 +6,7 @@ AWKS=dom.awk dor.awk tcal-calc.awk tcal-cvt.awk tcal.awk
 SHS=configboot.sh domstate.sh echo-mode.sh \
 	iceboot.sh insrel.sh ldall.sh \
 	tcal-kalle.sh tcal-stf.sh tcal.sh versions.sh \
-	softboot.sh
+	softboot.sh domhub-version.sh
 CSHS=common.sh
 PROGS=se tcalcycle domserv domterm decodetcal decodemoni decodeeng
 
@@ -20,6 +20,12 @@ tcalcycle: tcalcycle.o
 
 decodetcal: decodetcal.o
 	gcc -g -o decodetcal decodetcal.o
+
+decodemoni: decodemoni.o
+	gcc -g -o decodemoni decodemoni.o
+
+decodeeng: decodeeng.o
+	gcc -g -o decodeeng decodeeng.o
 
 domterm: domterm.o
 	gcc -g -o domterm domterm.o
