@@ -1,7 +1,7 @@
 send "\r"
-expect "# "
+expect "^# "
 send "s"
-expect "# "
+expect "^# "
 send "r"
-expect "# "
+expect "^# "
 

@@ -204,11 +204,12 @@ int main(int argc, char *argv[]) {
       }
       else if (strncmp(line, "expect", sizeof("expect")-1)==0) {
          char s[1024];
-         getString(line + sizeof("expect"), s, sizeof(s));
          regex_t preg;
          char rd[4096];
          int ofs = 0;
          int err;
+         
+	getString(line + sizeof("expect"), s, sizeof(s));
 
          if ((err=regcomp(&preg, s, REG_EXTENDED|REG_NEWLINE))!=0) {
             char errbuf[1024];
