@@ -1,6 +1,6 @@
 # Makefile for domhub-tools/domapp
 # Jacobsen
-# $Id: Makefile,v 1.2 2005-03-15 21:26:07 arthur Exp $
+# $Id: Makefile,v 1.3 2005-03-16 16:39:39 arthur Exp $
 
 INSTALL_BIN = /usr/local/bin
 
@@ -11,7 +11,7 @@ domapptest: domapptest.c domapp.h
 	gcc -Wall -o domapptest domapptest.c
 
 clean:
-	rm domapptest
+	rm -f domapptest
 
 install:
 	install domapp_multitest.pl $(INSTALL_BIN)
