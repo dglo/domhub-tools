@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.2 2005-03-15 00:22:14 jacobsen Exp $
+   $Id: domapptest.c,v 1.3 2005-03-15 01:03:19 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -25,12 +25,6 @@
 #include <getopt.h>
 #include <sys/poll.h>
 
-#define MAXBRIGHT           127
-#define MAXWIN              127
-#define MAXDELAY            375
-#define MAXMASK             4095
-#define MAXRATE             610
-
 int usage(void) {
   fprintf(stderr, 
 	  "Usage:\n"
@@ -40,7 +34,6 @@ int usage(void) {
 	  "    -h help: show this message\n"
 	  "    -v show slightly more verbose output\n"
 	  "    -V ask domapp for its release version\n"
-	  "    -z ask domapp for attached flasher ID string\n"
 	  "    -c change mode from Iceboot to domapp first\n"
 	  "    -s stuffing mode for maximum bandwidth\n"
 	  "    -d run duration, seconds (default 10)\n"
@@ -66,8 +59,6 @@ int usage(void) {
 	  "                                    for each ATWD channel\n"
 	  "    -W <wch0>,<wch1>,<wch2>,<wch3>: Sample width (1 or 2 bytes), each chan.\n"
 	  "    -F <num>: Read out <num> (0..255) ATWD samples\n"
-	  "    -Z <bright>,<win>,<delay>,<mask>,<rate>: Do flasher board run (HV must be off!)\n"
-	  "       MAXBRIGHT=%d MAXWIN=%d MAXDELAY=%d MAXMASK=%d MAXRATE=%d\n"
 	  "    -B: Set up (software-only) hit buffering\n"
 	  "    -I <mode>,<up-pre>,<up-post>,<dn-pre>,<dn-pos>: Require local coincidence,\n"
 	  "       with the four time windows given in nsec.\n"
@@ -77,8 +68,8 @@ int usage(void) {
 	  "  If no message types are given, echo test will be used.\n"
 	  "    -L <Volts>: Set DOM high voltage (BE CAREFUL!). Volts == DAC units/2.\n"
 	  "  Roll-your-own Custom Messages:\n"
-	  "    -C <type>,<subtype> E.g., -C 4,12 gives EXPCONTROL_BEGIN_RUN message.\n",
-	  MAXBRIGHT, MAXWIN, MAXDELAY, MAXMASK, MAXRATE);
+	  "    -C <type>,<subtype> E.g., -C 4,12 gives EXPCONTROL_BEGIN_RUN message.\n"
+	  );
   return 0;
 }
 
@@ -107,9 +98,6 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq);
 int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
 int setUpBuffering(int filep, int bufsiz);
-int startFlasherRun(int filep, int bufsiz, int fb_bright, int fb_win, int fb_delay, int fb_mask,
-		    int fb_rate);
-int endFlasherRun(int filep, int bufsiz);
 int setUpLC(int filep, int bufsiz, int mode, int up_pre_ns, 
 	    int up_post_ns, int dn_pre_ns, int dn_post_ns);
 int clearLC(int filep, int bufsiz);
@@ -188,10 +176,6 @@ int main(int argc, char *argv[]) {
   int whichATWD     = 0;
   int dohv          = 0;
   int hvdac         = 0;
-  int askflasher    = 0;
-  int doflasher     = 0;
-  int fb_bright, fb_win, fb_delay, fb_mask, fb_rate;
-
   unsigned short dacs[MAXDACS],dacvals[MAXDACS];
   int dac,val,ndacs=0;
   int lcmode;
@@ -199,7 +183,7 @@ int main(int argc, char *argv[]) {
   unsigned long long dtrwmin = 0, dtrwmax = 0;
 
   while(1) {
-    char c = getopt(argc, argv, "VzvhcBOsi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:Z:");
+    char c = getopt(argc, argv, "VvhcBOsi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
     if (c == -1) break;
 
     switch(c) {
@@ -239,12 +223,6 @@ int main(int argc, char *argv[]) {
 	exit(usage()); 
       defineEngrFmt = 1;
       break;
-    case 'Z': 
-      if(sscanf(optarg, "%d,%d,%d,%d,%d", &fb_bright, &fb_win, &fb_delay, &fb_mask, &fb_rate)!=5)
-	exit(usage());
-      if(dohv) exit(usage());
-      doflasher = 1;
-      break;
     case 'C': 
       if(sscanf(optarg, "%d,%d", &custType, &custSubType)!=2)
 	exit(usage()); 
@@ -257,7 +235,7 @@ int main(int argc, char *argv[]) {
     case 'i': strncpy(hitsfile, optarg, MAXFILENAME); savehits = 1; break;
     case 'w': hwival = atoi(optarg); break;
     case 'f': cfival = atoi(optarg); break;
-    case 'L': dohv = 1; hvdac = atoi(optarg)*2; if(doflasher) exit(usage()); break;
+    case 'L': dohv = 1; hvdac = atoi(optarg)*2; break;
     case 'S': 
       if(sscanf(optarg, "%d,%d", &dac, &val)!=2) { printf("Bad arg. format!\n"); exit(usage()); }
       if(dac<0 || val<0) { printf("DAC values must be positive!\n"); exit(-1); }
@@ -267,18 +245,9 @@ int main(int argc, char *argv[]) {
       break;
     case 'v': verbose = 1; break;
     case 'V': askversion = 1; break;
-    case 'z': askflasher = 1; break;
     case 'h':
     default: exit(usage());
     }
-  }
-
-  if(doflasher && ((fb_bright < 0 || fb_bright > MAXBRIGHT) ||
-		   (fb_win    < 0 || fb_win    > MAXWIN)    ||
-		   (fb_delay  < 0 || fb_delay  > MAXDELAY)  ||
-		   (fb_mask   < 0 || fb_mask   > MAXMASK)   ||
-		   (fb_rate   < 0 || fb_rate   > MAXRATE))) {
-    exit(usage());
   }
 
   /* Validate LC arguments */
@@ -397,7 +366,6 @@ int main(int argc, char *argv[]) {
   int lastdtsec = 0;
 
   int r;
-
   if(askversion) {
     char version[MAX_DATA_LEN];
     if((r=domsg(filep, bufsiz, 1000, 
@@ -407,16 +375,6 @@ int main(int argc, char *argv[]) {
       exit(-1);
     }
     printf("DOMApp version is '%s'\n", version);
-  }
-
-  if(askflasher) {
-    char id[MAX_DATA_LEN];
-    if((r=domsg(filep, bufsiz, 1000,
-                DATA_ACCESS, DATA_ACC_GET_FB_SERIAL, "+X", id)) != 0) {
-      printf("DATA_ACC_GET_FB_SERIAL failed: %d\n", r);
-      exit(-1);
-    }
-    printf("Flasher board ID is '%s'\n", id);
   }
 
   if(doCustom) {
@@ -521,22 +479,15 @@ int main(int argc, char *argv[]) {
       printf("Couldn't reset lookback memory (old domapp?)!\n");
       exit(-1);
     }
-    if(doflasher) { /* Special flasher run */
-      if(startFlasherRun(filep, bufsiz, fb_bright, fb_win, fb_delay, fb_mask, fb_rate)) {
-	printf("Initialization of flasher run failed.\n");
+    if(setUpBuffering(filep, bufsiz)) {
+      printf("Domapp buffering initialization failed.\n");
+      exit(-1);
+    }
+    /* Inject test pattern data after we start run so events are counted */
+    if(doswcomp && DO_TEST_INJECT) {
+      if(doSWCompTest(filep, bufsiz)) {
+	printf("Domapp sw compression test failed.\n");
 	exit(-1);
-      }
-    } else { /* Regular run */
-      if(setUpBuffering(filep, bufsiz)) {
-	printf("Domapp buffering initialization failed.\n");
-	exit(-1);
-      }
-      /* Inject test pattern data after we start run so events are counted */
-      if(doswcomp && DO_TEST_INJECT) {
-	if(doSWCompTest(filep, bufsiz)) {
-	  printf("Domapp sw compression test failed.\n");
-	  exit(-1);
-	}
       }
     }
   }
@@ -697,19 +648,12 @@ int main(int argc, char *argv[]) {
 	}
 
 	if(doswbuf && dtsec >= secDuration && ! done) {
-	  if(doflasher) {
-	    if(endFlasherRun(filep, bufsiz)) {
-	      printf("endFlasherRun failed.\n");
-	      exit(-1);
-	    } 
-	  } else {
-	    if(finishUpBuffering(filep, bufsiz)) {
-	      printf("finishUpBuffering failed.\n");
-	      exit(-1);
-	    }
-	    if(turnOffLC(filep, bufsiz)) {
-	      printf("turnOffLC failed.\n");
-	    }
+	  if(finishUpBuffering(filep, bufsiz)) {
+	    printf("finishUpBuffering failed.\n");
+	    exit(-1);
+	  }
+	  if(turnOffLC(filep, bufsiz)) {
+	    printf("turnOffLC failed.\n");
 	  }
 	  done = 1;
 	}
@@ -884,15 +828,6 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
 }
 
 
-int endFlasherRun(int filep, int bufsiz) {
-  int r;
-  if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_END_FB_RUN, "")) != 0) {
-    printf("EXPCONTROL_END_FB_RUN failed: %d\n", r);
-    return 1;
-  }
-  return 0;
-}
 
 int finishUpBuffering(int filep, int bufsiz) {
   int r;
@@ -948,18 +883,6 @@ int resetLBM(int filep, int bufsiz) {
   if((r=domsg(filep, bufsiz, 1000,
               DATA_ACCESS, DATA_ACC_RESET_LBM, "")) != 0) {
     printf("DATA_ACC_RESET_LBM failed: %d\n", r);
-    return 1;
-  }
-  return 0;
-}
-
-int startFlasherRun(int filep, int bufsiz, int fb_bright, int fb_win, int fb_delay,
-		    int fb_mask, int fb_rate) {
-  int r;
-  if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_FB_RUN, "-SSSSS", 
-	      fb_bright, fb_win, fb_delay, fb_mask, fb_rate)) != 0) {
-    printf("EXPCONTROL_BEGIN_FB_RUN failed: %d.\n", r);
     return 1;
   }
   return 0;
