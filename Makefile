@@ -8,3 +8,7 @@ all:
 install:
 	pushd moat   && make install && popd
 	pushd domapp && make install && popd
+
+clean:
+	pushd moat   && make clean && popd
+	pushd domapp && make clean && popd
