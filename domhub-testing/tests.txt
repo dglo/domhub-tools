@@ -1,0 +1,13 @@
+tcal 100 iceboot
+echo 300 echo-mode
+wr-block 200 echo-mode
+domid 30 iceboot
+softboot 500 iceboot
+fpga-reload 500 iceboot
+slow-open 200 iceboot
+temp 20 iceboot
+sink 300 iceboot
+source 120 iceboot
+echo-throttle 600 echo-mode
+current 200 iceboot
+quiet 120 iceboot
