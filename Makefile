@@ -1,15 +1,18 @@
 # Makefile for domhub-tools
 # Arthur Jones and John Jacobsen
-# $Id: Makefile,v 1.3 2005-03-15 01:06:06 jacobsen Exp $
+# $Id: Makefile,v 1.4 2005-03-22 21:46:44 jacobsen Exp $
 
 all:
-	pushd moat   && make && popd
-	pushd domapp && make && popd
+	cd moat   && make
+	cd domapp && make
+	cd devel  && make
 
 install:
-	pushd moat   && make install && popd
-	pushd domapp && make install && popd
+	cd moat   && make install
+	cd domapp && make install
+	cd devel  && make install
 
 clean:
-	pushd moat   && make clean && popd
-	pushd domapp && make clean && popd
+	cd moat   && make clean
+	cd domapp && make clean
+	cd devel  && make clean
