@@ -1,27 +1,34 @@
-all: se tcalcycle domterm domserv
-
-se: se.c
-	gcc -Wall -g -o se se.c -lutil
-
-tcalcycle: tcalcycle.c
-	gcc -Wall -g -o tcalcycle tcalcycle.c
-
-domterm: domterm.c
-	gcc -Wall -g -o domterm domterm.c
-
-domserv: domserv.c
-	gcc -Wall -g -o domserv domserv.c -lutil
+.c.o:
+	gcc -Wall -g -O -c $<
 
 EXPS=cb-version.exp ib-versions.exp
 AWKS=dom.awk dor.awk tcal-calc.awk tcal-cvt.awk tcal.awk
 SHS=configboot.sh domstate.sh echo-mode.sh \
 	iceboot.sh insrel.sh ldall.sh \
 	tcal-kalle.sh tcal-stf.sh tcal.sh versions.sh \
-        softboot.sh
+	softboot.sh
 CSHS=common.sh
+PROGS=se tcalcycle domserv domterm decodetcal decodemoni decodeeng
 
-install: se tcalcycle domserv domterm
-	install -D se tcalcycle domserv domterm /usr/local/bin
+all: $(PROGS)
+
+se: se.o
+	gcc -g -o se se.o -lutil
+
+tcalcycle: tcalcycle.o
+	gcc -g -o tcalcycle tcalcycle.o
+
+decodetcal: decodetcal.o
+	gcc -g -o decodetcal decodetcal.o
+
+domterm: domterm.o
+	gcc -g -o domterm domterm.o
+
+domserv: domserv.o
+	gcc -g -o domserv domserv.o -lutil
+
+install: $(PROGS)
+	install -D $(PROGS) /usr/local/bin
 	@mkdir -p /usr/local/share/domhub-tools
 	install -D $(AWKS) $(CSHS) $(SHS) $(EXPS) /usr/local/share/domhub-tools
 	for f in $(SHS); do \
@@ -31,8 +38,8 @@ install: se tcalcycle domserv domterm
 	done
 
 uninstall:
-	cd /usr/local/bin; rm se tcal
+	cd /usr/local/bin; rm $(PROGS)
 
 clean:
-	rm -f domterm domserv se tcalcycle *.o
+	rm -f $(PROGS) *.o
 
