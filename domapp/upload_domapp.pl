@@ -5,7 +5,7 @@
 #
 # John Jacobsen, John Jacobsen IT Services, for LBNL/IceCube
 # Dec. 2003
-# $Id: upload_domapp.pl,v 1.1 2005-03-15 00:22:30 jacobsen Exp $
+# $Id: upload_domapp.pl,v 1.2 2005-04-27 22:15:11 jacobsen Exp $
 my $prg = (split '/', $0)[-1];
 print "$prg by jacobsen\@npxdesigns.com for LBNL/IceCube...\n";
 
@@ -21,7 +21,8 @@ sub drain_iceboot;
 sub usage { return <<EOF;
 Usage: $0 [-f name] <card> <pair> <dom> <file>
 	            <dom> is A or B.
-          -f option writes flash using name <name>.
+          -f option writes flash using name <name>
+          -u option quits immediately after upload
 
 EOF
 ;
@@ -33,7 +34,9 @@ sub domserv_command;
 
 my $flash;
 my $help;
+my $uploadonly;
 GetOptions("flash=s" => \$flash,
+	   "upload|u"=> \$uploadonly,
 	   "help|h"  => \$help) || die usage;
 die usage if $help;
 # Check for domserv & sz...
@@ -125,23 +128,26 @@ if(domserv_command("localhost", $port, ".s")) {
     exit;
 }
 
-if(domserv_command("localhost", $port, "gunzip")) {
-    warn "domserv_command failed (gunzip).\n";
-    killdomserv $pid;
-    exit;
-}
+if(!defined $uploadonly) {
 
-if(defined $flash) {
-    if(domserv_command("localhost", $port, "s\" $flash\" create")) {
-	warn "domserv_command failed (write flash).\n";
-	killdomserv $pid;
-	exit -1;
-    }
-} else {
-    if(domserv_command("localhost", $port, "exec")) {
-	warn "domserv_command failed (exec).\n";
+    if(domserv_command("localhost", $port, "gunzip")) {
+	warn "domserv_command failed (gunzip).\n";
 	killdomserv $pid;
 	exit;
+    }
+    
+    if(defined $flash) {
+	if(domserv_command("localhost", $port, "s\" $flash\" create")) {
+	    warn "domserv_command failed (write flash).\n";
+	    killdomserv $pid;
+	    exit -1;
+	}
+    } else {
+	if(domserv_command("localhost", $port, "exec")) {
+	    warn "domserv_command failed (exec).\n";
+	    killdomserv $pid;
+	    exit;
+	}
     }
 }
 
