@@ -5,7 +5,7 @@
 #
 # John Jacobsen, John Jacobsen IT Services, for LBNL/IceCube
 # Dec. 2003
-# $Id: upload_domapp.pl,v 1.2 2005-04-27 22:15:11 jacobsen Exp $
+# $Id: upload_domapp.pl,v 1.3 2005-05-02 21:38:33 jacobsen Exp $
 my $prg = (split '/', $0)[-1];
 print "$prg by jacobsen\@npxdesigns.com for LBNL/IceCube...\n";
 
@@ -61,7 +61,7 @@ print "$file -> $card $pair $dom...\n";
 
 my $port = 4001 + $card * 8 + $pair * 2 + ($dom eq 'A' ? 0 : 1);
 my $szport = $port + 500;
-my $szargs = "--ymodem -k --tcp-client localhost:$szport $file";
+my $szargs = "-q --ymodem -k --tcp-client localhost:$szport $file";
 
 print "Talking port $port, SZ port $szport.\n";
 # Start domserv...
