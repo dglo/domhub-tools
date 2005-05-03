@@ -115,17 +115,14 @@ sub testDOM {
 	return 0 unless flasherTest($dom);
 	return 1;
     }
+
+    return 0 unless getDOMIDTest($dom);
+    return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
     return 0 unless LCMoniTest($dom);
-    return 1;
-    return 0 unless collectTestPatternDataTestNoLC($dom);
-    return 0 unless collectCPUTrigDataTestNoLC($dom);
-    return 0 unless collectTestPatternDataTestLCUp($dom);
-    return 0 unless collectTestPatternDataTestLCDn($dom);
-    return 0 unless collectTestPatternDataTestLCUpDn($dom);
     return 1;
 }
 
@@ -299,6 +296,21 @@ sub asciiMoniTest {
     return 1;
 }
 
+sub getDOMIDTest {
+    my $dom = shift; die unless defined $dom;
+    print "Testing fetch of DOM ID... ";
+    my $cmd = "$dat -Q $dom 2>&1";
+    print "$cmd\n" if defined $showcmds;
+    my $result = `$cmd`;
+    if($result !~ /DOM ID is \'(.+?)\'/) {
+        $lasterr = "DOM ID failed:\ncommand: $cmd\nresult:\n$result\n\n";
+        return 0;
+    } else {
+        my $details = $detailed?", got good ID string from domapptest":"";
+        print "OK ('$1'$details).\n";
+    }
+    return 1;
+}
 
 
 sub swConfigMoniTest {
@@ -426,11 +438,12 @@ sub checkEngTrigs {
 }
 
 sub doShortHitCollection {
-    my $dom  = shift;
-    my $type = shift;
-    my $name = shift;
-    my $lcup = shift;
-    my $lcdn = shift;
+    my $dom  = shift; die unless defined $dom;
+    my $type = shift; die unless defined $type;
+    my $name = shift; die unless defined $name;
+    my $lcup = shift; die unless defined $lcup;
+    my $lcdn = shift; die unless defined $lcdn;
+
     print "Collecting $name (trigger type $type) data...\n";
     my $engFile = "short_$name"."_$dom.hits";
     my $monFile = "short_$name"."_$dom.moni";
@@ -456,7 +469,8 @@ sub doShortHitCollection {
     if($numhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	print "OK ($1 hits).\n";
     } else {
-	$lasterr = "Didn't get any hit data - check $engFile.\n";
+	$lasterr = "Didn't get any hit data - check $engFile.\n".
+	    "Monitoring stream:\n".`decodemoni -v $monFile`;
 	return 0;
     }
     my @typelines = `/usr/local/bin/decodeeng $engFile | grep type`;
@@ -464,29 +478,9 @@ sub doShortHitCollection {
     return 1;
 }
 
-sub collectTestPatternDataTestNoLC { 
-    my $dom = shift;
-    return doShortHitCollection($dom, 0, "testPattern", 0, 0);
-}
-
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift;
     return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0);
-}
-
-sub collectTestPatternDataTestLCUpDn {
-    my $dom = shift;
-    return doShortHitCollection($dom, 0, "testPatternLCUpDn", 1, 1);
-}
-
-sub collectTestPatternDataTestLCUp {
-    my $dom = shift;
-    return doShortHitCollection($dom, 0, "testPatternLCUp", 1, 0);
-} 
-
-sub collectTestPatternDataTestLCDn {
-    my $dom = shift;
-    return doShortHitCollection($dom, 0, "testPatternLCDn", 0, 1);
 }
 
 sub flasherVersionTest {

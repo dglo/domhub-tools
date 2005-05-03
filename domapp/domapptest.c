@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.3 2005-03-15 01:03:19 jacobsen Exp $
+   $Id: domapptest.c,v 1.4 2005-05-03 22:52:07 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -34,6 +34,7 @@ int usage(void) {
 	  "    -h help: show this message\n"
 	  "    -v show slightly more verbose output\n"
 	  "    -V ask domapp for its release version\n"
+	  "    -Q get DOM ID from DOM\n"
 	  "    -c change mode from Iceboot to domapp first\n"
 	  "    -s stuffing mode for maximum bandwidth\n"
 	  "    -d run duration, seconds (default 10)\n"
@@ -176,6 +177,7 @@ int main(int argc, char *argv[]) {
   int whichATWD     = 0;
   int dohv          = 0;
   int hvdac         = 0;
+  int getDOMID      = 0;
   unsigned short dacs[MAXDACS],dacvals[MAXDACS];
   int dac,val,ndacs=0;
   int lcmode;
@@ -183,10 +185,11 @@ int main(int argc, char *argv[]) {
   unsigned long long dtrwmin = 0, dtrwmax = 0;
 
   while(1) {
-    char c = getopt(argc, argv, "VvhcBOsi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
+    char c = getopt(argc, argv, "QVvhcBOsi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
     if (c == -1) break;
 
     switch(c) {
+    case 'Q': getDOMID = 1; break;
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
     case 's': stuffit = 1; break;
@@ -366,6 +369,18 @@ int main(int argc, char *argv[]) {
   int lastdtsec = 0;
 
   int r;
+
+  if(getDOMID) {
+    char ID[MAX_DATA_LEN];
+    if((r=domsg(filep, bufsiz, 1000,
+                MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
+                "+X", ID)) != 0) {
+      printf("MSGHAND_GET_DOM_ID failed: %d\n", r);
+      exit(-1);
+    }
+    printf("DOM ID is '%s'\n", ID);
+  }
+
   if(askversion) {
     char version[MAX_DATA_LEN];
     if((r=domsg(filep, bufsiz, 1000, 
