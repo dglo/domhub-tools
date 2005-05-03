@@ -350,7 +350,7 @@ sub hwConfigMoniTest {
     for(@dmtext) {
 	if(/HW EVT/) {
 	    $gotone++;
-	    print "\n$_";
+	    # print "\n$_";
 	}
     }
     if($gotone) {
