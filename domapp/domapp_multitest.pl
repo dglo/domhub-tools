@@ -7,7 +7,8 @@
 package MY_PACKAGE;
 use strict;
 use Getopt::Long;
-sub testDOM; sub loadFPGA;
+sub testDOM; sub loadFPGA; sub docmd;
+
 my $failstart = "\n\nFAILURE ------------------------------------------------\n";
 my $failend   =     "--------------------------------------------------------\n";
 my $lasterr;
@@ -118,6 +119,10 @@ sub testDOM {
 
     return 0 unless getDOMIDTest($dom);
     return 0 unless collectCPUTrigDataTestNoLC($dom);
+
+    return 1;
+
+
     return 0 unless shortEchoTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 unless swConfigMoniTest($dom);
@@ -182,8 +187,7 @@ sub versionTest {
     my $dom = shift;
     print "Checking version with domapptest... ";
     my $cmd = "$dat -V $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /DOMApp version is \'(.+?)\'/) {
 	$lasterr = "Version retrieval from domapp failed:\ncommand: $cmd\nresult:\n$result\n\n";
 	return 0;
@@ -198,8 +202,7 @@ sub shortEchoTest {
     my $dom = shift;
     print "Performing short domapp echo message test... ";
     my $cmd = "$dat -d2 -E1 $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result =~ /Done \((\d+) usec\)\./) {        
 	my $details = $detailed?" (domapptest program reported success)":"";
 	print "OK$details.\n";
@@ -223,8 +226,7 @@ sub LCMoniTest {
     foreach my $mode(1..3) {
 	print "Mode $mode: ";
 	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1,$win2,$win3 $dom 2>&1";
-	print "$cmd\n" if defined $showcmds;
-	my $result = `$cmd`;
+	my $result = docmd $cmd;
 	if($result !~ /Done \((\d+) usec\)\./) {
 	    $lasterr = "Test of monitoring of LC state changes failed:\n".
 		"Command: $cmd\n".
@@ -276,8 +278,7 @@ sub asciiMoniTest {
     print "Testing ASCII monitoring... ";
     my $moniFile = "ascii_$dom.moni";
     my $cmd = "$dat -d2 -M1 -m $moniFile $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short monitoring test failed:\n".
 	    "Command: $cmd\n".
@@ -300,8 +301,7 @@ sub getDOMIDTest {
     my $dom = shift; die unless defined $dom;
     print "Testing fetch of DOM ID... ";
     my $cmd = "$dat -Q $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /DOM ID is \'(.+?)\'/) {
         $lasterr = "DOM ID failed:\ncommand: $cmd\nresult:\n$result\n\n";
         return 0;
@@ -318,8 +318,7 @@ sub swConfigMoniTest {
     print "Testing software configuration monitoring... ";
     my $moniFile = "sw_$dom.moni";
     my $cmd = "$dat -d4 -M1 -f 1 -m $moniFile $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
 	$lasterr = "Short software monitoring test failed:\nCommand: $cmd\n".
 	    "Result:\n$result\n\n";
@@ -350,8 +349,7 @@ sub hwConfigMoniTest {
     print "Testing hardware configuration monitoring... ";
     my $moniFile = "hw_$dom.moni";
     my $cmd = "$dat -d4 -M1 -w 1 -m $moniFile $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
 	$lasterr = "HW monitoring test failed:\nCommand: $cmd\n".
 	    "Result:\n$result\n\n";
@@ -437,6 +435,20 @@ sub checkEngTrigs {
     return 1;
 }
 
+sub docmd {
+    my $cmd = shift; die unless defined $cmd;
+    print "$cmd\n" if defined $showcmds;
+    my $outfile = ".dm$$.".time;
+    if($showcmds) {
+	system "$cmd 2>&1 | tee $outfile";
+    } else {
+	system "$cmd 2>&1 > $outfile";
+    }
+    my $rez = `cat $outfile`; 
+    unlink $outfile; 
+    return $rez;
+}
+
 sub doShortHitCollection {
     my $dom  = shift; die unless defined $dom;
     my $type = shift; die unless defined $type;
@@ -457,23 +469,22 @@ sub doShortHitCollection {
     }
     my $lcstr = $mode ? "-I $mode,100,100,100,100" : "";
     my $cmd = "$dat -d2 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short $name run failed::\n".
 	    "Command: $cmd\n".
 	    "Result:\n$result\n\n";
         return 0;
     }
-    my $numhits = `/usr/local/bin/decodeeng $engFile | grep "time stamp" | wc -l`;
+    my $numhits = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "time stamp" | wc -l`;
     if($numhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	print "OK ($1 hits).\n";
     } else {
 	$lasterr = "Didn't get any hit data - check $engFile.\n".
-	    "Monitoring stream:\n".`decodemoni -v $monFile`;
+	    "Monitoring stream:\n".`decodemoni -v $monFile`."domapptest log:\n$result\n";
 	return 0;
     }
-    my @typelines = `/usr/local/bin/decodeeng $engFile | grep type`;
+    my @typelines = `/usr/local/bin/decodeeng $engFile 2>&1 | grep type`;
     return 0 unless checkEngTrigs($type, 0, $lcup, $lcdn, @typelines);
     return 1;
 }
@@ -486,8 +497,7 @@ sub collectCPUTrigDataTestNoLC {
 sub flasherVersionTest {
     my $dom  = shift;
     my $cmd = "$dat -z $dom";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd 2>&1`;
+    my $result = docmd $cmd;
     if($result =~ /Flasher board ID is \'(.*?)\'/) {
 	if($1 eq "") {
 	    $lasterr = "Flasher board ID was empty.\n";
@@ -515,8 +525,7 @@ sub flasherTest {
     my $cmd = "$dat -S0,850 -S1,2300 -S2,350 -S3,2250 -S7,2130 -S14,450"
 	." -H1 -M1 -m $moni -i $hits -d 5 -B $dom -Z $bright,$win,$delay,$mask,$rate"
 	." 2>&1";
-    print "$cmd\n" if defined $showcmds;
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     print "Result:\n$result";
     return 1;
 }
