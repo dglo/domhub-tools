@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.4 2005-05-03 22:52:07 jacobsen Exp $
+   $Id: domapptest.c,v 1.5 2005-05-06 22:58:53 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -240,9 +240,9 @@ int main(int argc, char *argv[]) {
     case 'f': cfival = atoi(optarg); break;
     case 'L': dohv = 1; hvdac = atoi(optarg)*2; break;
     case 'S': 
-      if(sscanf(optarg, "%d,%d", &dac, &val)!=2) { printf("Bad arg. format!\n"); exit(usage()); }
-      if(dac<0 || val<0) { printf("DAC values must be positive!\n"); exit(-1); }
-      if(ndacs >= MAXDACS) { printf("Too many DAC values specified!\n"); exit(-1); }
+      if(sscanf(optarg, "%d,%d", &dac, &val)!=2) { fprintf(stderr,"Bad arg. format!\n"); exit(usage()); }
+      if(dac<0 || val<0) { fprintf(stderr,"DAC values must be positive!\n"); exit(-1); }
+      if(ndacs >= MAXDACS) { fprintf(stderr,"Too many DAC values specified!\n"); exit(-1); }
       dacs[ndacs] = dac; 
       dacvals[ndacs++] = val;
       break;
@@ -259,32 +259,32 @@ int main(int argc, char *argv[]) {
 	      (dn_pre_ns  < 0 || dn_pre_ns  > MAXLCWIN) ||
 	      (dn_post_ns < 0 || dn_post_ns > MAXLCWIN) ||
 	      (lcmode < 1 || lcmode > 3))) {
-    printf("Error: LC windows must be between 0 and %d,\n"
+    fprintf(stderr,"Error: LC windows must be between 0 and %d,\n"
 	   "mode between 1 and 3.\n", MAXLCWIN);
     exit(-1);
   }
 
   /* Validate engineering format arguments */
   if(nadc<0 || nadc>255) {
-    printf("Error: number of ADC samples must be between 0 and 255.\n");
+    fprintf(stderr,"Error: number of ADC samples must be between 0 and 255.\n");
     exit(-1);
   }
 
   int ich;
   for(ich=0;ich<4;ich++) {
     if(sampwids[ich] != 1 && sampwids[ich] != 2) {
-      printf("Error: sample widths must be 1 or 2.\n");
+      fprintf(stderr,"Error: sample widths must be 1 or 2.\n");
       exit(usage());
     }
     if(nsamps[ich] != 0 && nsamps[ich] != 16 && nsamps[ich] != 32
        && nsamps[ich] != 64  && nsamps[ich] != 128) {
-      printf("Error: number of ATWD samples must be 0, 16, 32, 64, or 128.\n");
+      fprintf(stderr,"Error: number of ATWD samples must be 0, 16, 32, 64, or 128.\n");
       exit(usage());
     }
   }
 
   if(dfreq) 
-    printf("Will set DAC %d to values in the range [%d, %d] with a relative freq. %d.\n",
+    fprintf(stderr,"Will set DAC %d to values in the range [%d, %d] with a relative freq. %d.\n",
 	   dacnum, dacmin, dacmax, dfreq);
 
   int argcount = argc-optind;
@@ -295,40 +295,40 @@ int main(int argc, char *argv[]) {
 
   /* Determine message frequencies */
   if(!efreq && !mfreq && !hfreq && !dfreq) {
-    printf("No message types specified... won't poll domapp for data.\n");
+    fprintf(stderr,"No message types specified... won't poll domapp for data.\n");
   } 
 
   int * cyclic;
   if(dopoll) {
     cyclic = getCycle(efreq, mfreq, hfreq, dfreq);
-    if(!cyclic) { printf("Malloc failed.\n"); exit(-1); }
+    if(!cyclic) { fprintf(stderr,"Malloc failed.\n"); exit(-1); }
     int showfreq = 0, il;
     for(il=0;showfreq && il<efreq+mfreq+hfreq+dfreq;il++) {
-      printf("Entry %d <- %s\n", il, msgstr[cyclic[il]]);
+      fprintf(stderr,"Entry %d <- %s\n", il, msgstr[cyclic[il]]);
     }
   }
 
   /* Open file(s) */
   int filep = open(filename, O_RDWR);
   if(filep <= 0) {
-    printf("Can't open file %s (%d:%s)\n", filename, errno, strerror(errno));
+    fprintf(stderr,"Can't open file %s (%d:%s)\n", filename, errno, strerror(errno));
     exit(-1);
   }   
 
   if(savemoni) {
-    printf("Will save monitoring data to file %s.\n", monifile);
+    fprintf(stderr,"Will save monitoring data to file %s.\n", monifile);
     monifd = open(monifile, O_RDWR|O_TRUNC|O_CREAT, 0644);
     if(monifd <= 0) {
-      printf("Can't open file %s for output (%d:%s)\n", monifile, errno, strerror(errno));
+      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", monifile, errno, strerror(errno));
       exit(-1);
     }
   }
 
   if(savehits) {
-    printf("Will save hit data to file %s.\n", hitsfile);
+    fprintf(stderr,"Will save hit data to file %s.\n", hitsfile);
     hitsfd = open(hitsfile, O_RDWR|O_TRUNC|O_CREAT, 0644);
     if(hitsfd <= 0) {
-      printf("Can't open file %s for output (%d:%s)\n", hitsfile, errno, strerror(errno));
+      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", hitsfile, errno, strerror(errno));
       exit(-1);
     }
   }
@@ -338,7 +338,7 @@ int main(int argc, char *argv[]) {
   if(doChangeState) {
     drainMsgs(filep, rdbuf, MAX_MSG_BYTES, 1, 10); /* Show iceboot msgs */
     int nw = write(filep, DOMAPPSTR, strlen(DOMAPPSTR));
-    printf("Wrote %d bytes.\n", nw);
+    fprintf(stderr,"Wrote %d bytes.\n", nw);
     usleep(1000000);
     drainMsgs(filep, rdbuf, MAX_MSG_BYTES, 1, 20);
     usleep(3000000);  
@@ -346,24 +346,24 @@ int main(int argc, char *argv[]) {
 
   /* Prepare downgoing echomessage */
   DOMMSG * echoMsg = newEchoMsg();
-  if(echoMsg == NULL) { printf("Can't get message buffer!\n"); exit(-1); }
+  if(echoMsg == NULL) { fprintf(stderr,"Can't get message buffer!\n"); exit(-1); }
   int maxSendData = bufsiz-MSG_HDR_LEN; /* Size of DATA PORTION */
   fillEchoMessageData(echoMsg, maxSendData);
 
   /* Prepare downgoing monitor request message */
   DOMMSG * moniMsg = newMoniMsg();
-  if(moniMsg == NULL) { printf("Can't get monitor message buffer!\n"); exit(-1); }
+  if(moniMsg == NULL) { fprintf(stderr,"Can't get monitor message buffer!\n"); exit(-1); }
 
   /* Prepare "set DAC" message */
   DOMMSG * dacMsg = newSetDacMsg(dacnum, 0); /* Will set DAC value in main loop below */
-  if(dacMsg == NULL) { printf("Couldn't get dacMsg!\n"); exit(-1); }
+  if(dacMsg == NULL) { fprintf(stderr,"Couldn't get dacMsg!\n"); exit(-1); }
 
   /* Prepare "get hits" message */
   DOMMSG * getHitsMsg = newGetHitDataMsg();
-  if(getHitsMsg == NULL) { printf("Couldn't get buffer for hit request message!\n"); exit(-1); }
+  if(getHitsMsg == NULL) { fprintf(stderr,"Couldn't get buffer for hit request message!\n"); exit(-1); }
 
   DOMMSG * msgReply = (DOMMSG *) malloc(sizeof(DOMMSG));
-  if(msgReply == NULL) { printf("Couldn't get buffer for message reply!\n"); exit(-1); }
+  if(msgReply == NULL) { fprintf(stderr,"Couldn't get buffer for message reply!\n"); exit(-1); }
 
   /* Start clock */
   int lastdtsec = 0;
@@ -375,10 +375,10 @@ int main(int argc, char *argv[]) {
     if((r=domsg(filep, bufsiz, 1000,
                 MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
                 "+X", ID)) != 0) {
-      printf("MSGHAND_GET_DOM_ID failed: %d\n", r);
+      fprintf(stderr,"MSGHAND_GET_DOM_ID failed: %d\n", r);
       exit(-1);
     }
-    printf("DOM ID is '%s'\n", ID);
+    fprintf(stderr,"DOM ID is '%s'\n", ID);
   }
 
   if(askversion) {
@@ -386,60 +386,60 @@ int main(int argc, char *argv[]) {
     if((r=domsg(filep, bufsiz, 1000, 
 		MESSAGE_HANDLER, MSGHAND_GET_DOMAPP_RELEASE, 
 		"+X", version)) != 0) {
-      printf("MSGHAND_GET_DOMAPP_RELEASE failed: %d\n", r); 
+      fprintf(stderr,"MSGHAND_GET_DOMAPP_RELEASE failed: %d\n", r); 
       exit(-1);
     }
-    printf("DOMApp version is '%s'\n", version);
+    fprintf(stderr,"DOMApp version is '%s'\n", version);
   }
 
   if(doCustom) {
-    printf("Sending message type %d, subtype %d... ",custType, custSubType);
+    fprintf(stderr,"Sending message type %d, subtype %d... ",custType, custSubType);
     if((r=domsg(filep, bufsiz, 1000,
                 custType, custSubType, "")) != 0) {
-      printf("\ncustom message failed: %d\n", r); 
+      fprintf(stderr,"\ncustom message failed: %d\n", r); 
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   if(hwival || cfival) {
 
-    printf("Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", hwival, cfival);
+    fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", hwival, cfival);
     if((r=domsg(filep, bufsiz, 1000,
                 DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
 		"-LL", (unsigned long) hwival, (unsigned long) cfival)) != 0) {
-      printf("DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
+      fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   if(defineTrig) {
-    printf("Setting trigger mode to %d... ", trigMode);
+    fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
 		(unsigned char) trigMode)) != 0) {
-      printf("DSC_SET_TRIG_MODE failed: %d\n", r);
+      fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   if(defineATWD) {
     if(whichATWD != 0 && whichATWD != 1) {
-      printf("Error: must select ATWD 0 or 1!\n\n");
+      fprintf(stderr,"Error: must select ATWD 0 or 1!\n\n");
       exit(usage());
     }
-    printf("Selecting ATWD %d... ", whichATWD);
+    fprintf(stderr,"Selecting ATWD %d... ", whichATWD);
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SELECT_ATWD, "-C",
 		(unsigned char) whichATWD)) != 0) {
-      printf("DSC_SELECT_ATWD failed: %d\n", r);
+      fprintf(stderr,"DSC_SELECT_ATWD failed: %d\n", r);
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   if(defineEngrFmt) {
-    printf("Setting ATWD format to %d(%d) %d(%d) %d(%d) %d(%d) (%d FADC samps)... ",
+    fprintf(stderr,"Setting ATWD format to %d(%d) %d(%d) %d(%d) %d(%d) (%d FADC samps)... ",
 	   nsamps[0], sampwids[0],
 	   nsamps[1], sampwids[1],
 	   nsamps[2], sampwids[2],
@@ -448,28 +448,28 @@ int main(int argc, char *argv[]) {
     getMasks(&mask0, &mask1, nsamps, sampwids);
     if((r=domsg(filep, bufsiz, 1000, DATA_ACCESS, DATA_ACC_SET_ENG_FMT, "-CCC",
 		(unsigned char) (nadc&0xFF), mask0, mask1)) != 0) {
-      printf("DATA_ACC_SET_ENG_FMT failed: %d\n", r);
+      fprintf(stderr,"DATA_ACC_SET_ENG_FMT failed: %d\n", r);
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   /* Set DACs to desired values */
   int idac;
   for(idac=0; idac<ndacs; idac++) {
-    printf("Setting DAC %d to %d... ", dacs[idac], dacvals[idac]);
+    fprintf(stderr,"Setting DAC %d to %d... ", dacs[idac], dacvals[idac]);
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_WRITE_ONE_DAC, "-CCS", 
 		dacs[idac], 0, dacvals[idac])) != 0) {
-      printf("DSC_WRITE_ONE_DAC failed: %d\n", r);
+      fprintf(stderr,"DSC_WRITE_ONE_DAC failed: %d\n", r);
       exit(-1);
     }
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   /* Set up compression if desired */
   if(doswcomp) {
     if(setUpCompression(filep, bufsiz, setthresh, atwd_thresh, fadc_thresh)) {
-      printf("Domapp software compression initialization failed.\n");
+      fprintf(stderr,"Domapp software compression initialization failed.\n");
       exit(-1);
     }
   }
@@ -482,7 +482,7 @@ int main(int argc, char *argv[]) {
   if(dolc) {
     if(setUpLC(filep, bufsiz, lcmode, up_pre_ns, up_post_ns, 
 		     dn_pre_ns, dn_post_ns)) {
-      printf("Domapp local coincidence initialization failed.\n");
+      fprintf(stderr,"Domapp local coincidence initialization failed.\n");
       exit(-1);
     }
   } else { /* If !dolc, then set mode to zero */
@@ -491,17 +491,17 @@ int main(int argc, char *argv[]) {
 
   if(doswbuf) {
     if(resetLBM(filep, bufsiz)) {
-      printf("Couldn't reset lookback memory (old domapp?)!\n");
+      fprintf(stderr,"Couldn't reset lookback memory (old domapp?)!\n");
       exit(-1);
     }
     if(setUpBuffering(filep, bufsiz)) {
-      printf("Domapp buffering initialization failed.\n");
+      fprintf(stderr,"Domapp buffering initialization failed.\n");
       exit(-1);
     }
     /* Inject test pattern data after we start run so events are counted */
     if(doswcomp && DO_TEST_INJECT) {
       if(doSWCompTest(filep, bufsiz)) {
-	printf("Domapp sw compression test failed.\n");
+	fprintf(stderr,"Domapp sw compression test failed.\n");
 	exit(-1);
       }
     }
@@ -544,12 +544,12 @@ int main(int argc, char *argv[]) {
 	int len = sendMsg(filep, msgToSend);
 	inflight++;
 	if(len == 0) {
-	  printf("Bad return value from sendMsg (%d)!\n", len);
+	  fprintf(stderr,"Bad return value from sendMsg (%d)!\n", len);
 	  exit(-1);
 	} else if(len == -1 && errno == EAGAIN) {
 	  break;
 	} else if(len == -1) {
-	  printf("sendMsg gave -1, errno=%d (%s).\n", errno, strerror(errno));
+	  fprintf(stderr,"sendMsg gave -1, errno=%d (%s).\n", errno, strerror(errno));
 	  exit(-1);
 	} else {
 	  icyc++; if(icyc >= efreq+mfreq+hfreq+dfreq) icyc=0;
@@ -567,7 +567,7 @@ int main(int argc, char *argv[]) {
 	if(len == -1) { // EAGAIN
 	  usleep(1000);
 	} else if(len < 0) {
-	  printf("getMsg gave %d -- quitting.\n", len);
+	  fprintf(stderr,"getMsg gave %d -- quitting.\n", len);
 	  exit(-1);
 	} else {
 	  gotread = 1;
@@ -576,16 +576,16 @@ int main(int argc, char *argv[]) {
 	    (lastTRead.tv_usec - lastTWrite.tv_usec);
 	  if(dtrwmin == 0 || dtrw < dtrwmin) dtrwmin = dtrw;
 	  if(dtrw > dtrwmax) dtrwmax = dtrw;
-	  //printf("dtrw=%llu min=%llu max=%llu usec\n", dtrw, dtrwmin, dtrwmax);
+	  //fprintf(stderr,"dtrw=%llu min=%llu max=%llu usec\n", dtrw, dtrwmin, dtrwmax);
 	  
-	  //printf("\nGot %d byte reply from domapp.\n", len);
+	  //fprintf(stderr,"\nGot %d byte reply from domapp.\n", len);
 	  int rmt    = msgType(msgReply);
 	  int rmst   = msgSubType(msgReply);
 	  int dlen   = msgDataLen(msgReply);
 	  int status = msgStatus(msgReply);
 	  if(status != 1) {
-	    printf("ERROR: bad status from domapp (%d).\n", status);
-	    printf("mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
+	    fprintf(stderr,"ERROR: bad status from domapp (%d).\n", status);
+	    fprintf(stderr,"mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
 	    exit(-1);
 	  } else {
 	    inflight--;
@@ -595,7 +595,7 @@ int main(int argc, char *argv[]) {
 	    } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_NEXT_MONI_REC) {
 	      if(dlen && savemoni) {
 		int nm = write(monifd, msgReply->data, dlen);
-		if(nm != dlen) { printf("Short write (%d of %d bytes) to monitoring stream.\n", 
+		if(nm != dlen) { fprintf(stderr,"Short write (%d of %d bytes) to monitoring stream.\n", 
 					nm, dlen); exit(-1); }
 	      }
 	      msgs[MONI]++;
@@ -608,11 +608,11 @@ int main(int argc, char *argv[]) {
 	      msgBytes[HITS] += len;
 	      if(dlen && savehits) {
 		int nh = write(hitsfd, msgReply->data, dlen);
-		if(nh != dlen) { printf("Short write (%d of %d bytes) to hit data stream.\n",
+		if(nh != dlen) { fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
 					nh, dlen); exit(-1); }
 	      }
 	    } else {
-	      printf("Unknown message mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
+	      fprintf(stderr,"Unknown message mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
 	    }
 	  } /* status ok */
 	} /* length ok */
@@ -653,36 +653,36 @@ int main(int argc, char *argv[]) {
 	  double totBytes = (double) msgBytes[ECHO] + (double) msgBytes[MONI] + 
 	    (double) msgBytes[HITS] + (double) msgBytes[SETDAC];
 	  double echoDataRate = totBytes / (((double) dtsec)*1E3);
-	  printf("%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %2.2fMB, %2.2f kB/sec", 
+	  fprintf(stderr,"%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %2.2fMB, %2.2f kB/sec", 
 		 dtsec, dtusec, msgs[ECHO], msgs[MONI], msgs[HITS], msgs[SETDAC], 
 		 totBytes/1E6, echoDataRate);
 	  if(verbose) {
-	    printf(" dtmin=%llu dtmax=%llu", dtrwmin, dtrwmax);
+	    fprintf(stderr," dtmin=%llu dtmax=%llu", dtrwmin, dtrwmax);
 	  }
-	  printf("\n");
+	  fprintf(stderr,"\n");
 	}
 
 	if(doswbuf && dtsec >= secDuration && ! done) {
 	  if(finishUpBuffering(filep, bufsiz)) {
-	    printf("finishUpBuffering failed.\n");
+	    fprintf(stderr,"finishUpBuffering failed.\n");
 	    exit(-1);
 	  }
 	  if(turnOffLC(filep, bufsiz)) {
-	    printf("turnOffLC failed.\n");
+	    fprintf(stderr,"turnOffLC failed.\n");
 	  }
 	  done = 1;
 	}
 
 	/* Add 1 to run length after run stop to get last monitoring, etc. events */
 	if(dtsec >= secDuration+1) {
-	  printf("Done (%lld usec).\n",dt);
+	  fprintf(stderr,"Done (%lld usec).\n",dt);
 	  break;
 	}
 	lastdtsec = dtsec;
       }
 
       if(idle > MAXIDLE) {
-	printf("No successful reads or writes in %d trials.  DOM died?\n", idle);
+	fprintf(stderr,"No successful reads or writes in %d trials.  DOM died?\n", idle);
 	exit(-1);
       }
     }
@@ -705,30 +705,30 @@ int main(int argc, char *argv[]) {
 void showbuf(unsigned char *buf, int n) {
   int cpl=16;
   int nl = n/cpl+1;
-  printf("%d bytes: \n", n); 
+  fprintf(stderr,"%d bytes: \n", n); 
   int il, ic;
   for(il=0; il<nl; il++) {
     for(ic=0; ic<cpl; ic++) {
       int iof = il*cpl + ic;
       if(iof < n) {
-	printf("%c", printable(buf[iof])); 
+	fprintf(stderr,"%c", printable(buf[iof])); 
       } else {
-	printf(" ");
+	fprintf(stderr," ");
       }
     }
 
-    printf("  ");
+    fprintf(stderr,"  ");
     for(ic=0; ic<cpl; ic++) {
       int iof = il*cpl + ic;
       if(iof < n) {
-        printf("%02x ", buf[iof]);
+        fprintf(stderr,"%02x ", buf[iof]);
       } else {
 	break;
       }
     }
-    printf("\n"); 
+    fprintf(stderr,"\n"); 
   }
-  printf("\n");
+  fprintf(stderr,"\n");
   
 }
 
@@ -738,7 +738,7 @@ void show_fpga(int icard) {
      card */
   char cmdbuf[1024];
   snprintf(cmdbuf,1024,"cat /proc/driver/domhub/card%d/fpga",icard);
-  printf("Showing FPGA registers: %s.\n",cmdbuf);
+  fprintf(stderr,"Showing FPGA registers: %s.\n",cmdbuf);
   system(cmdbuf);
 }
 
@@ -848,7 +848,7 @@ int finishUpBuffering(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
               EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
-    printf("EXPCONTROL_END_RUN failed: %d\n", r);
+    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -858,7 +858,7 @@ int clearLC(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
 	      DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", 0)) != 0) {
-    printf("DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
+    fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -871,12 +871,12 @@ int setUpLC(int filep, int bufsiz, int mode,
   if((r=domsg(filep, bufsiz, 1000,
               DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_WINDOW, "-LLLL", 
 	      up_pre_ns, up_post_ns, dn_pre_ns, dn_post_ns)) != 0) {
-    printf("DSC_SET_LOCAL_COIN_WINDOW failed: %d\n", r);
+    fprintf(stderr,"DSC_SET_LOCAL_COIN_WINDOW failed: %d\n", r);
     return 1;
   }
   if((r=domsg(filep, bufsiz, 1000,
 	      DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", mode)) != 0) {
-    printf("DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
+    fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -886,7 +886,7 @@ int turnOffLC(int filep, int bufsiz) {
    int r;
    if((r=domsg(filep, bufsiz, 1000,
 	       DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", 0)) != 0) {
-     printf("DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
+     fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
      return 1;
    }
    return 0;
@@ -897,7 +897,7 @@ int resetLBM(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
               DATA_ACCESS, DATA_ACC_RESET_LBM, "")) != 0) {
-    printf("DATA_ACC_RESET_LBM failed: %d\n", r);
+    fprintf(stderr,"DATA_ACC_RESET_LBM failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -907,7 +907,7 @@ int setUpBuffering(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
-    printf("EXPCONTROL_BEGIN_RUN failed: %d\n", r);
+    fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -918,7 +918,7 @@ int doSWCompTest(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
               DATA_ACCESS, DATA_ACC_TEST_SW_COMP, "")) != 0) {
-    printf("EXPCONTROL_BEGIN_RUN failed: %d\n", r);
+    fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -935,27 +935,27 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
   if((r=domsg(filep, bufsiz, 1000,
               EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
 	      targetATWD0, targetATWD1, targetFADC)) != 0) {
-    printf("EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
+    fprintf(stderr,"EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
     return 1;
   }
 
-  printf("pedestal collection succeeded.\n");
+  fprintf(stderr,"pedestal collection succeeded.\n");
   
   unsigned long nped0, nped1, nadc;
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
 	      &nped0, &nped1, &nadc)) != 0) {
-    printf("EXPCONTROL_GET_NUM_PEDESTALS failed: %d.\n", r);
+    fprintf(stderr,"EXPCONTROL_GET_NUM_PEDESTALS failed: %d.\n", r);
     return 1;
   }
   
   if(nped0 != targetATWD0 || nped1 != targetATWD1 || nadc != targetFADC) {
-    printf("Pedestal sums (%ld,%ld,%ld) disagree w/ target (%d, %d, %d)!\n", nped0, nped1, nadc,
+    fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) disagree w/ target (%d, %d, %d)!\n", nped0, nped1, nadc,
 	   targetATWD0, targetATWD1, targetFADC);
     return 1;
   }
   
-  printf("Collected %ld ATWD0, %ld ATWD1 and %ld FADC pedestals.\n", nped0, nped1, nadc);
+  fprintf(stderr,"Collected %ld ATWD0, %ld ATWD1 and %ld FADC pedestals.\n", nped0, nped1, nadc);
 
   /* Read out the pedestal averages -- too complicated to use domsg()... */
   DOMMSG * pedAvgs  = newGetPedestalAveragesMsg();
@@ -964,7 +964,7 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
   if(msgReply == NULL) { free(pedAvgs); return 1; }
 
   if(sendAndReceive(filep, bufsiz, pedAvgs, msgReply, 100)) {
-    printf("Send-and-receive getPedestalAverages failed.\n");
+    fprintf(stderr,"Send-and-receive getPedestalAverages failed.\n");
     free(pedAvgs);
     return 1;
   } 
@@ -979,22 +979,22 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
 
   for(ichip=0; ichip<2; ichip++) {
     for(ich=0; ich<4; ich++) {
-      printf("ATWD%d ch%d: ", ichip, ich);
+      fprintf(stderr,"ATWD%d ch%d: ", ichip, ich);
       for(isamp=0; isamp<ATWDCHSIZ; isamp++) {
 	pedavg[ichip][ich][isamp] = unformatShort(msgReply->data+of);
 	of += 2;
-	printf("%hu ", pedavg[ichip][ich][isamp]);
+	fprintf(stderr,"%hu ", pedavg[ichip][ich][isamp]);
       }
-      printf("\n");
+      fprintf(stderr,"\n");
     }
   }
-  printf("FADC ");
+  fprintf(stderr,"FADC ");
   for(isamp=0; isamp<FADCSIZ; isamp++) {
     fadcavg[isamp] = unformatShort(msgReply->data+of);
     of += 2;
-    printf("%hu ", fadcavg[isamp]);
+    fprintf(stderr,"%hu ", fadcavg[isamp]);
   }
-  printf("\n");
+  fprintf(stderr,"\n");
 
   /* Set baseline (RoadGrader) thresholds */
   if(dothresh) {
@@ -1003,7 +1003,7 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
 		fadc_thresh,
 		atwdthresh[0], atwdthresh[1], atwdthresh[2], atwdthresh[3],
 		atwdthresh[0], atwdthresh[1], atwdthresh[2], atwdthresh[3])) != 0) {
-      printf("DATA_ACC_SET_BASELINE_THRESHOLD failed: %d.\n", r);
+      fprintf(stderr,"DATA_ACC_SET_BASELINE_THRESHOLD failed: %d.\n", r);
       return 1;
     }
   }
@@ -1013,19 +1013,19 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
 	      &fadc_thresh,
 	      &atwdthresh[0], &atwdthresh[1], &atwdthresh[2], &atwdthresh[3],
 	      &atwdthresh[0], &atwdthresh[1], &atwdthresh[2], &atwdthresh[3])) != 0) {
-    printf("DATA_ACC_GET_BASELINE_THRESHOLD failed: %d.\n", r);
+    fprintf(stderr,"DATA_ACC_GET_BASELINE_THRESHOLD failed: %d.\n", r);
     return 1;
   }
 
 
   for(ich=0; ich<4; ich++) {
-    printf("ATWD ch%d: threshold=%d\n", ich, atwdthresh[ich]);
+    fprintf(stderr,"ATWD ch%d: threshold=%d\n", ich, atwdthresh[ich]);
   }
-  printf("FADC threshold = %d\n", fadc_thresh);
+  fprintf(stderr,"FADC threshold = %d\n", fadc_thresh);
 
   if((r=domsg(filep, bufsiz, 1000,
               DATA_ACCESS, DATA_ACC_SET_SW_DATA_COMPRESSION, "-C", 1)) != 0) {
-    printf("DATA_ACC_SET_SW_DATA_COMPRESSION failed: %d.\n", r);
+    fprintf(stderr,"DATA_ACC_SET_SW_DATA_COMPRESSION failed: %d.\n", r);
     return 1;
   }
 
@@ -1033,11 +1033,11 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
 
   if((r=domsg(filep, bufsiz, 1000,
               DATA_ACCESS, DATA_ACC_GET_SW_DATA_COMPRESSION, "+C", &isSet)) != 0) {
-    printf("DATA_ACC_GET_SW_DATA_COMPRESSION failed: %d.\n", r);
+    fprintf(stderr,"DATA_ACC_GET_SW_DATA_COMPRESSION failed: %d.\n", r);
     return 1;
   }
 
-  printf("Software data compression is %s.\n", isSet?"ON":"OFF");
+  fprintf(stderr,"Software data compression is %s.\n", isSet?"ON":"OFF");
   return 0;
 }
 
@@ -1056,42 +1056,42 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
 #define MAXTRIALS  100  
 #define SLEEPMS    300 
   if(hvdac > 2*MAXHV) {
-    printf("setHighVoltage: voltage too high (%d V, %d is maximum)!\n",
+    fprintf(stderr,"setHighVoltage: voltage too high (%d V, %d is maximum)!\n",
 	   hvdac/2, MAXHV);
     return 1;
   }
-  printf("Enabling high voltage...\n");
+  fprintf(stderr,"Enabling high voltage...\n");
   if((r=domsg(filep, bufsiz, 1000,
 	      DOM_SLOW_CONTROL, DSC_ENABLE_PMT_HV, "")) != 0) {
-    printf("DSC_ENABLE_PMT_HV failed: %d\n", r);
+    fprintf(stderr,"DSC_ENABLE_PMT_HV failed: %d\n", r);
     return 1;
   }
 
-  printf("Setting high voltage...\n");
+  fprintf(stderr,"Setting high voltage...\n");
   if((r=domsg(filep, bufsiz, 1000,
               DOM_SLOW_CONTROL, DSC_SET_PMT_HV, "-S", hvdac)) != 0) {
-    printf("DSC_SET_PMT_HV(%d DAC units) failed: %d\n", hvdac, r);
+    fprintf(stderr,"DSC_SET_PMT_HV(%d DAC units) failed: %d\n", hvdac, r);
     return 1;
   }
 
-  printf("Waiting for HV to ramp up.... "); fflush(stdout);
+  fprintf(stderr,"Waiting for HV to ramp up.... "); fflush(stdout);
   int ok=0, isec;
   unsigned short qadc,qdac,junk;
   for(isec=0;isec<MAXTRIALS;isec++) {
     if((r=domsg(filep, bufsiz, 1000,
 		DOM_SLOW_CONTROL, DSC_QUERY_PMT_HV, "+SSS", &junk, &qadc, &qdac)) != 0) {
-      printf("DSC_QUERY_PMT_HV failed: %d\n", r);
+      fprintf(stderr,"DSC_QUERY_PMT_HV failed: %d\n", r);
       highVoltageOff(filep, bufsiz);
       return 1;
     }
     /* Check return DAC setting */
     if(qdac != hvdac) {
-      printf("ERROR: High voltage setting (%d DAC units) in DOM is wrong!  (Should be %d).\n",
+      fprintf(stderr,"ERROR: High voltage setting (%d DAC units) in DOM is wrong!  (Should be %d).\n",
 	     qdac, hvdac);
       highVoltageOff(filep, bufsiz);
       return 1;
     }
-    printf("%d V... ", qadc/2); fflush(stdout);
+    fprintf(stderr,"%d V... ", qadc/2); fflush(stdout);
     if(abs(((int) hvdac) - ((int) qadc)) < MAXHVDELTA*2) {
       ok = 1;
       break;
@@ -1099,11 +1099,11 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
     usleep(1000*SLEEPMS);
   }
   if(!ok) {
-    printf("HV (%d V) never reached target value (%d V)!\n", qadc/2, hvdac/2);
+    fprintf(stderr,"HV (%d V) never reached target value (%d V)!\n", qadc/2, hvdac/2);
     highVoltageOff(filep, bufsiz);
     return 1;
   } else {
-    printf("OK.\n");
+    fprintf(stderr,"OK.\n");
   }
 
   return 0;
@@ -1111,16 +1111,16 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
 
 
 int highVoltageOff(int filep, int bufsiz) {
-  printf("Turning off high voltage.\n");
+  fprintf(stderr,"Turning off high voltage.\n");
   int r;
   if((r=domsg(filep, bufsiz, 1000,
               DOM_SLOW_CONTROL, DSC_SET_PMT_HV, "-S", (unsigned short) 0)) != 0) {
-    printf("DSC_SET_PMT_HV(0) failed: %d\n", r);
+    fprintf(stderr,"DSC_SET_PMT_HV(0) failed: %d\n", r);
     return 1;
   }
   if((r=domsg(filep, bufsiz, 1000,
               DOM_SLOW_CONTROL, DSC_DISABLE_PMT_HV, "")) != 0) {
-    printf("DSC_DISABLE_PMT_HV failed: %d\n", r);
+    fprintf(stderr,"DSC_DISABLE_PMT_HV failed: %d\n", r);
     return 1;
   }
   return 0;
