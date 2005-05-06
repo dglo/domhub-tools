@@ -2,7 +2,7 @@
  *
  * hacked out of decodemoni.c from:
  * John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
- *  $Id: decodeeng.c,v 1.2 2005-03-17 18:41:23 arthur Exp $
+ *  $Id: decodeeng.c,v 1.3 2005-05-06 22:57:40 jacobsen Exp $
  *
  * Decode engineering format data to make sure it makes sense
  *
@@ -113,21 +113,28 @@ int main(int argc, char *argv[]) {
       
       while (!feof(fptr)) {
          unsigned char buf[4096];
+	 int nread;
 
          if(wrapped) {
-            if (fread(buf, 1, 32, fptr)!=32) {
-               fprintf(stderr, 
-                       "decodeeng: partial record getting wrapped header\n");
-               return 1;
-            }
-
-            {  unsigned long long domid = be64(buf+8);
-               unsigned long long tcal = be64(buf+24);
-               printf("\nDOM %llx [%llx]\n", domid, tcal);
-            }
+	   nread = fread(buf, 1, 32, fptr);
+	   if(nread == 0) {
+	     return 1;
+	   } else if (nread!=32) {
+	     fprintf(stderr, 
+		     "decodeeng: partial record getting wrapped header\n");
+	     return 1;
+	   }
+	   
+	   {  unsigned long long domid = be64(buf+8);
+	     unsigned long long tcal = be64(buf+24);
+	     printf("\nDOM %llx [%llx]\n", domid, tcal);
+	   }
          }
          
-         if (fread(buf, 1, 4, fptr)!=4) {
+	 nread = fread(buf, 1, 4, fptr);
+	 if(nread == 0) {
+	   return 1; /* Don't complain on EOF */
+	 } else if(nread != 4) {
             fprintf(stderr, "decodeeng: partial read getting len/format\n");
             return 1;
          }
