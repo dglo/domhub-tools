@@ -117,12 +117,9 @@ sub testDOM {
 	return 1;
     }
 
-    return 0 unless getDOMIDTest($dom);
     return 0 unless collectCPUTrigDataTestNoLC($dom);
-
     return 1;
-
-
+    return 0 unless getDOMIDTest($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 unless swConfigMoniTest($dom);
@@ -167,18 +164,18 @@ sub loadFPGA {
 sub upload {
     my $dom = shift;
     my $image = shift;
-    print "Uploading $image to $dom...\n";
+    print "Uploading $image to $dom...";
     my $uploadcmd = "/usr/local/bin/upload_domapp.pl $card{$dom} $pair{$dom} $aorb{$dom} $image";
     my $tmpfile = ".tmp_ul_$dom"."_$$";
     system "$uploadcmd 2>&1 > $tmpfile";
     my $result = `cat $tmpfile`;
     unlink $tmpfile || mydie "Can't unlink $tmpfile: $!\n";
     if($result !~ /Done, sayonara./) {
-        print "upload failed: session text:\n$uploadcmd\n\n$result\n\n";
+        print "\nupload failed: session text:\n$uploadcmd\n\n$result\n\n";
         return 0;
     } else {
 	my $details = $detailed?" (upload_domapp.pl script reported success)":"";
-	print "OK$details.\n";
+	print "\nOK$details.\n";
     }
     return 1;
 }
@@ -440,7 +437,9 @@ sub docmd {
     print "$cmd\n" if defined $showcmds;
     my $outfile = ".dm$$.".time;
     if($showcmds) {
+	print "About to do $cmd....!!!!!\n";
 	system "$cmd 2>&1 | tee $outfile";
+	print "Done.\n";
     } else {
 	system "$cmd 2>&1 > $outfile";
     }
@@ -455,6 +454,7 @@ sub doShortHitCollection {
     my $name = shift; die unless defined $name;
     my $lcup = shift; die unless defined $lcup;
     my $lcdn = shift; die unless defined $lcdn;
+    my $dur  = shift; die unless defined $dur;
 
     print "Collecting $name (trigger type $type) data...\n";
     my $engFile = "short_$name"."_$dom.hits";
@@ -468,7 +468,7 @@ sub doShortHitCollection {
 	$mode = 3;
     }
     my $lcstr = $mode ? "-I $mode,100,100,100,100" : "";
-    my $cmd = "$dat -d2 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
+    my $cmd = "$dat -d $dur -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short $name run failed::\n".
@@ -491,12 +491,12 @@ sub doShortHitCollection {
 
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0);
+    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0, 2);
 }
 
 sub flasherVersionTest {
     my $dom  = shift;
-    my $cmd = "$dat -z $dom";
+    my $cmd = "$dat -z $dom 2>&1";
     my $result = docmd $cmd;
     if($result =~ /Flasher board ID is \'(.*?)\'/) {
 	if($1 eq "") {
