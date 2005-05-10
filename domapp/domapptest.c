@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.5 2005-05-06 22:58:53 jacobsen Exp $
+   $Id: domapptest.c,v 1.6 2005-05-10 20:42:14 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -421,6 +421,18 @@ int main(int argc, char *argv[]) {
       fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
       exit(-1);
     }
+
+    unsigned char trigModeCheck = 0xFF; 
+    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
+		&trigModeCheck)) != 0) {
+      fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
+      exit(-1);
+    }
+    if(trigModeCheck != trigMode) { 
+      fprintf(stderr,"DSC_GET_TRIG_MODE failed: trigModeCheck=%d trigMode=%d\n", trigModeCheck, trigMode);
+      exit(-1);
+    }
+    
     fprintf(stderr,"OK.\n");
   }
 
