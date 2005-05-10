@@ -1,7 +1,0 @@
-send "\r"
-expect "# "
-send "s"
-expect "# "
-send "r"
-expect "# "
-
