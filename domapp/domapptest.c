@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.6 2005-05-10 20:42:14 jacobsen Exp $
+   $Id: domapptest.c,v 1.7 2005-05-10 21:33:12 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -98,7 +98,7 @@ void fillEchoMessageData(DOMMSG *m, int max);
 int * getCycle(int efreq, int mfreq, int hfreq, int dfreq);
 int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
-int setUpBuffering(int filep, int bufsiz);
+int beginRun(int filep, int bufsiz);
 int setUpLC(int filep, int bufsiz, int mode, int up_pre_ns, 
 	    int up_post_ns, int dn_pre_ns, int dn_post_ns);
 int clearLC(int filep, int bufsiz);
@@ -502,11 +502,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(doswbuf) {
-    if(resetLBM(filep, bufsiz)) {
-      fprintf(stderr,"Couldn't reset lookback memory (old domapp?)!\n");
-      exit(-1);
-    }
-    if(setUpBuffering(filep, bufsiz)) {
+    if(beginRun(filep, bufsiz)) {
       fprintf(stderr,"Domapp buffering initialization failed.\n");
       exit(-1);
     }
@@ -519,7 +515,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  /* keep gettimeofday near setUpBuffering to time run correctly */
+  /* keep gettimeofday near beginRun to time run correctly */
   struct timeval tstart; 
   gettimeofday(&tstart, NULL);
 
@@ -905,17 +901,8 @@ int turnOffLC(int filep, int bufsiz) {
  }
 
 
-int resetLBM(int filep, int bufsiz) {
-  int r;
-  if((r=domsg(filep, bufsiz, 1000,
-              DATA_ACCESS, DATA_ACC_RESET_LBM, "")) != 0) {
-    fprintf(stderr,"DATA_ACC_RESET_LBM failed: %d\n", r);
-    return 1;
-  }
-  return 0;
-}
 
-int setUpBuffering(int filep, int bufsiz) {
+int beginRun(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {

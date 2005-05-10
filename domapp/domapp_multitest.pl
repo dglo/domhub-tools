@@ -8,12 +8,13 @@ package MY_PACKAGE;
 use strict;
 use Getopt::Long;
 sub testDOM; sub loadFPGA; sub docmd; sub haveError; sub filly;
-sub printc;
+sub printc;  sub delim;
 
 my $failstart = "\n\nFAILURE ------------------------------------------------\n";
 my $failend   =     "--------------------------------------------------------\n";
 my $lasterr;
 my $O = filly $0;
+my $msgcols = 50;
 
 sub mydie { die $failstart.shift().$failend; }
 
@@ -65,6 +66,8 @@ my %card;
 my %pair;
 my %aorb;
 
+print "$O: Starting tests at '".(scalar localtime)."'\n";
+
 print "Available DOMs: ";
 if($doms[0] eq "all") {
     my @iscomstr = 
@@ -99,14 +102,12 @@ print "\n";
 
 # implement serially now, but think about parallelizing later
 
-print "$O: Starting tests at '".(scalar localtime)."'\n";
-
 foreach my $dom (@doms) {
     mydie "Test of domapp (image ".(defined $image?"$image":"in flash").") on $dom failed!\n"
 	."$lasterr" unless testDOM($dom);
 }
 
-print "$O: SUCCESS at ".(scalar localtime)."\n";
+print "\n$O: SUCCESS at '".(scalar localtime)."'\n";
 
 exit;
 
@@ -144,9 +145,12 @@ sub testDOM {
     return 1;
 }
 
+sub delim {
+    print "-" x ($msgcols+3) . "\n";
+}
+
 sub printc {
     my $msg = shift;
-    my $msgcols = 50;
     printf "%".$msgcols."s", $msg;
 }
 
