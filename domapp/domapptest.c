@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.7 2005-05-10 21:33:12 jacobsen Exp $
+   $Id: domapptest.c,v 1.8 2005-05-12 00:33:00 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -66,6 +66,7 @@ int usage(void) {
 	  "       Mode=1 (upper and lower enabled) 2 (upper only) 3 (lower only)\n"
 	  "    -O: Set up software data compression (needs -B option!)\n"
 	  "    -R <a0>,<a1>,<a2>,<a3>,<f> Set road-grader thresholds for both ATWDs and FADC\n"
+	  "    -p: Run pulser to generate SPE triggers in absence of real PMT\n"
 	  "  If no message types are given, echo test will be used.\n"
 	  "    -L <Volts>: Set DOM high voltage (BE CAREFUL!). Volts == DAC units/2.\n"
 	  "  Roll-your-own Custom Messages:\n"
@@ -98,12 +99,12 @@ void fillEchoMessageData(DOMMSG *m, int max);
 int * getCycle(int efreq, int mfreq, int hfreq, int dfreq);
 int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
-int beginRun(int filep, int bufsiz);
+int beginRun(int filep, int bufsiz, int dopulser);
+int endRun(int filep, int bufsiz, int dopulser);
 int setUpLC(int filep, int bufsiz, int mode, int up_pre_ns, 
 	    int up_post_ns, int dn_pre_ns, int dn_post_ns);
 int clearLC(int filep, int bufsiz);
 int turnOffLC(int filep, int bufsiz);
-int finishUpBuffering(int filep, int bufsiz);
 int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthresh[], 
 		     unsigned short fadc_thresh);
 int setHighVoltage(int filep, int bufsiz, int hv);
@@ -178,6 +179,7 @@ int main(int argc, char *argv[]) {
   int dohv          = 0;
   int hvdac         = 0;
   int getDOMID      = 0;
+  int dopulser      = 0;
   unsigned short dacs[MAXDACS],dacvals[MAXDACS];
   int dac,val,ndacs=0;
   int lcmode;
@@ -185,7 +187,7 @@ int main(int argc, char *argv[]) {
   unsigned long long dtrwmin = 0, dtrwmax = 0;
 
   while(1) {
-    char c = getopt(argc, argv, "QVvhcBOsi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
+    char c = getopt(argc, argv, "QVvhcBOspi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
     if (c == -1) break;
 
     switch(c) {
@@ -199,6 +201,7 @@ int main(int argc, char *argv[]) {
     case 'E': efreq = atoi(optarg); dopoll = 1; break;
     case 'M': mfreq = atoi(optarg); dopoll = 1; break;
     case 'H': hfreq = atoi(optarg); dopoll = 1; break;
+    case 'p': dopulser = 1; break;
     case 'I': if(sscanf(optarg, "%d,%d,%d,%d,%d", &lcmode,
 			&up_pre_ns, &up_post_ns, &dn_pre_ns,
 			&dn_post_ns)!=5) exit(usage());
@@ -502,7 +505,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(doswbuf) {
-    if(beginRun(filep, bufsiz)) {
+    if(beginRun(filep, bufsiz, dopulser)) {
       fprintf(stderr,"Domapp buffering initialization failed.\n");
       exit(-1);
     }
@@ -671,8 +674,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	if(doswbuf && dtsec >= secDuration && ! done) {
-	  if(finishUpBuffering(filep, bufsiz)) {
-	    fprintf(stderr,"finishUpBuffering failed.\n");
+	  if(endRun(filep, bufsiz, dopulser)) {
+	    fprintf(stderr,"endRun failed.\n");
 	    exit(-1);
 	  }
 	  if(turnOffLC(filep, bufsiz)) {
@@ -852,13 +855,24 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
 
 
 
-int finishUpBuffering(int filep, int bufsiz) {
+int endRun(int filep, int bufsiz, int dopulser) {
   int r;
+
   if((r=domsg(filep, bufsiz, 1000,
               EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
     return 1;
   }
+
+  if(dopulser) {
+    fprintf(stderr,"Turning off front-end pulser... \n");
+    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
+      fprintf(stderr,"DSC_SET_PULSER_OFF failed: %d\n", r);
+      exit(-1);
+    }
+    fprintf(stderr,"OK.\n");
+  }
+
   return 0;
 }
 
@@ -902,13 +916,24 @@ int turnOffLC(int filep, int bufsiz) {
 
 
 
-int beginRun(int filep, int bufsiz) {
+int beginRun(int filep, int bufsiz, int dopulser) {
   int r;
+
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
   }
+
+  if(dopulser) {
+    fprintf(stderr,"Turning on front-end pulser... \n");
+    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_ON, ""))) {
+      fprintf(stderr,"DSC_SET_PULSER_ON failed: %d\n", r);
+      exit(-1);
+    }
+    fprintf(stderr,"OK.\n");
+  }
+
   return 0;
 }
 

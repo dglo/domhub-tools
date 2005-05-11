@@ -10,11 +10,17 @@ use Getopt::Long;
 sub testDOM; sub loadFPGA; sub docmd; sub haveError; sub filly;
 sub printc;  sub delim;
 
+
 my $failstart = "\n\nFAILURE ------------------------------------------------\n";
 my $failend   =     "--------------------------------------------------------\n";
 my $lasterr;
-my $O = filly $0;
-my $msgcols = 50;
+my $O            = filly $0;
+my $msgcols      = 50;
+my $speThreshDAC = 9;
+my $speThresh    = 600;
+my $pulserDAC    = 11;
+my $pulserAmp    = 500;
+my $dat          = "/usr/local/bin/domapptest";
 
 sub mydie { die $failstart.shift().$failend; }
 
@@ -31,6 +37,7 @@ Options:
                  of just what didn't work.
     -F:          Run flasher tests (SEALED, DARK DOMs ONLY)
     -V:          Run tests requiring HV (SEALED, DARK DOMs ONLY)
+    -A <prog>:   Use <prog> rather than $dat
     -l <name>:   Load FPGA image <name> from flash before test
 
 If -V or -F options are not given, only tests appropriate for a
@@ -48,11 +55,11 @@ GetOptions("help|h"          => \$help,
            "detailed|d"      => \$detailed,
 	   "loadfpga|l=s"    => \$loadfpga,
            "dohv|V"          => \$dohv,
+           "dat|A=s"         => \$dat,
            "doflasher|F"     => \$doflasher) || die usage;
 
 die usage if $help;
 
-my $dat = "/usr/local/bin/domapptest";
 die "Can't find domapptest program $dat.\n" unless -e $dat;
 my @doms   = @ARGV;
 if(@doms == 0) { $doms[0] = "all"; }
@@ -128,7 +135,9 @@ sub testDOM {
     return 0 unless getDOMIDTest($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless asciiMoniTest($dom);
+    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 unless collectCPUTrigDataTestNoLC($dom);
+    return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
     return 0 unless LCMoniTest($dom);
@@ -461,7 +470,8 @@ sub checkEngTrigs {
                 return 0;
             }
 	    my $hittype = hex($2); 
-	    if($hittype != $type) { 
+	    if( ($type == 2 && $hittype != 1 && $hittype != 2) ||
+		($type != 2 && $hittype != $type)) { 
 		$lasterr = "Hit line: $line\n".
 		    "Hit type $hittype doesn't match required type $type!\n";
 		return 0;
@@ -497,6 +507,7 @@ sub doShortHitCollection {
     my $lcup = shift; die unless defined $lcup;
     my $lcdn = shift; die unless defined $lcdn;
     my $dur  = shift; die unless defined $dur;
+    my $puls = shift; die unless defined $puls;
 
     printc "Collecting $name (trigger type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
@@ -509,9 +520,12 @@ sub doShortHitCollection {
     } elsif($lcdn && !$lcup) {
 	$mode = 3;
     }
-    my $lcstr = $mode ? "-I $mode,100,100,100,100" : "";
-    my $cmd = "$dat -d $dur -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
-    my $result = docmd $cmd;
+    my $lcstr     = $mode ? "-I $mode,100,100,100,100" : "";
+    my $pulserArg = $puls ? "-p -S$pulserDAC,$pulserAmp" : "";
+    my $cmd       = "$dat -d $dur -S$speThreshDAC,$speThresh $pulserArg "
+	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
+
+    my $result    = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short $name run failed::\n".
 	    "Command: $cmd\n".
@@ -539,14 +553,18 @@ sub doShortHitCollection {
 
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0, 4);
+    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0, 4, 0);
 }
 
 sub collectDiscTrigDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 2, "discTrigger", 0, 0, 4);
+    return doShortHitCollection($dom, 2, "discTrigger", 0, 0, 4, 0);
 }
 
+sub collectPulserDataTestNoLC {
+    my $dom = shift;
+    return doShortHitCollection($dom, 2, "pulserTrigger", 0, 0, 4, 1);
+}
 
 sub flasherVersionTest {
     my $dom  = shift;
