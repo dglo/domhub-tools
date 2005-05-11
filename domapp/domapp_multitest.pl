@@ -20,7 +20,11 @@ my $speThreshDAC = 9;
 my $speThresh    = 600;
 my $pulserDAC    = 11;
 my $pulserAmp    = 500;
+my $defaultDACS  = "-S0,850 -S1,2097 -S2,600 -S3,2048"
+    .              "-S4,850 -S5,2097 -S6,600 -S7,1925"
+    .              "-S10,700 -S13,800 -S14,1023 -S15,1023";
 my $dat          = "/usr/local/bin/domapptest";
+
 
 sub mydie { die $failstart.shift().$failend; }
 
@@ -438,13 +442,17 @@ sub domappmode {
 }
 
 sub checkEngTrigs {
-    my $type = shift;
-    my $unkn = shift;
-    my $lcup = shift;
-    my $lcdn = shift;
+    my $type = shift; die unless defined $type;
+    my $unkn = shift; die unless defined $unkn;
+    my $lcup = shift; die unless defined $lcup;
+    my $lcdn = shift; die unless defined $lcdn;
+    # If pulser is on, should ONLY have SPE triggers:
+    my $puls = shift; die unless defined $puls;
     my @typelines = @_;
     
     # print "Checking engineering event trigger lines for appropriate type/flags...\n";
+    my $haveForcedTrig = 0;
+
     foreach my $line (@typelines) {
 	chomp $line;
 	# print "$line vs. $type $unkn $lcup $lcdn\n";
@@ -470,16 +478,32 @@ sub checkEngTrigs {
                 return 0;
             }
 	    my $hittype = hex($2); 
-	    if( ($type == 2 && $hittype != 1 && $hittype != 2) ||
-		($type != 2 && $hittype != $type)) { 
+	    $haveForcedTrig = 1 if $hittype == 1;
+	    my $badhit = 0;
+	    $badhit = 1 if $puls && ($type != 2 || $hittype != 2);
+	    $badhit = 1 if $type ==2 && $hittype != 1 && $hittype != 2;
+	    $badhit = 1 if $type != 2 && $hittype != $type;
+	    if($badhit) {
 		$lasterr = "Hit line: $line\n".
-		    "Hit type $hittype doesn't match required type $type!\n";
+		    "Hit type $hittype doesn't match required type $type (pulser is "
+		    .($puls?"ON":"off").")!\n";
 		return 0;
 	    }
 	} else {
 	    $lasterr = "Bad hit type line '$line'.\n";
 	    return 0;
 	}
+    }
+
+    if($type == 1 && !$haveForcedTrig) {
+	$lasterr = "Run type was 1 and did not have any forced triggers!\n";
+	return 0;
+    } elsif($type == 2 && !$puls && !$haveForcedTrig) {
+	$lasterr = "Run type was 2, pulser was off, but did not have any heartbeat triggers!\n";
+	return 0;
+    } elsif($type == 2 && $puls && $haveForcedTrig) {
+	$lasterr = "Run type was 2, pulser was on, and had heartbeat/forced triggers!\n";
+	return 0;
     }
     return 1;
 }
@@ -508,6 +532,7 @@ sub doShortHitCollection {
     my $lcdn = shift; die unless defined $lcdn;
     my $dur  = shift; die unless defined $dur;
     my $puls = shift; die unless defined $puls;
+    my $thresh = shift; die unless defined $thresh;
 
     printc "Collecting $name (trigger type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
@@ -522,7 +547,7 @@ sub doShortHitCollection {
     }
     my $lcstr     = $mode ? "-I $mode,100,100,100,100" : "";
     my $pulserArg = $puls ? "-p -S$pulserDAC,$pulserAmp" : "";
-    my $cmd       = "$dat -d $dur -S$speThreshDAC,$speThresh $pulserArg "
+    my $cmd       = "$dat -d $dur $defaultDACS -S$speThreshDAC,$thresh $pulserArg "
 	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
 
     my $result    = docmd $cmd;
@@ -547,23 +572,23 @@ sub doShortHitCollection {
 	return 0;
     }
     my @typelines = `/usr/local/bin/decodeeng $engFile 2>&1 | grep type`;
-    return 0 unless checkEngTrigs($type, 0, $lcup, $lcdn, @typelines);
+    return 0 unless checkEngTrigs($type, 0, $lcup, $lcdn, $puls, @typelines);
     return 1;
 }
 
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0, 4, 0);
+    return doShortHitCollection($dom, 1, "cpuTrigger", 0, 0, 4, 0, 0);
 }
 
 sub collectDiscTrigDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 2, "discTrigger", 0, 0, 4, 0);
+    return doShortHitCollection($dom, 2, "discTrigger", 0, 0, 4, 0, $speThresh);
 }
 
 sub collectPulserDataTestNoLC {
     my $dom = shift;
-    return doShortHitCollection($dom, 2, "pulserTrigger", 0, 0, 4, 1);
+    return doShortHitCollection($dom, 2, "pulserTrigger", 0, 0, 4, 1, $speThresh);
 }
 
 sub flasherVersionTest {
