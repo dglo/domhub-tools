@@ -615,7 +615,7 @@ int main(int argc, char *argv[]) {
       /* check for stdin... */
       if (chkStdin && (fds[0].revents&POLLIN)) {
 	 char line[128];
-	 int idx = -1, en, nr;
+	 int idx = -1, en = -1, nr;
 
 	 /* deal with input... */
 	 memset(line, 0, sizeof(line));
@@ -642,7 +642,7 @@ int main(int argc, char *argv[]) {
 	    }
 	 }
 	
-	 if (idx!=-1) {
+	 if (idx!=-1 && en!=-1) {
 	    /* found one! */
 	    dhe[idx] = en;
 
