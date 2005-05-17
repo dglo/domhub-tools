@@ -1,3 +1,9 @@
+/*
+   decomp.c - jacobsen@npxdesigns.com
+   Simple decompressor for Joshua Sopher's roadgrader format
+   May, 2005
+*/
+
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -16,7 +22,7 @@ unsigned short swapShort(unsigned short x) {
   return (((x>>8)&0xFF)|((x&0xFF)<<8)); 
 }
 
-main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
 #define BUFS 4096
   unsigned char * hbuf[BUFS];
 
@@ -77,5 +83,6 @@ main(int argc, char *argv[]) {
       fprintf(stderr, "WARNING: Block boundary mismatch, thisBlock=%d\n", thisBlock);
   }
   close(fd);
+  return 1;
 }
 
