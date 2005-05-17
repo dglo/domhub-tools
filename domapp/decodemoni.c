@@ -1,7 +1,7 @@
 /* decodemoni.c : C program to decode/test monitoring data from DOM
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started May, 2004
-   $Id: decodemoni.c,v 1.2 2005-03-17 18:41:23 arthur Exp $
+   $Id: decodemoni.c,v 1.1 2005-05-17 21:21:26 jacobsen Exp $
 
    Decode monitor data to make sure it makes sense
 */
