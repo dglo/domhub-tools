@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.8 2005-05-12 00:33:00 jacobsen Exp $
+   $Id: domapptest.c,v 1.9 2005-05-19 00:07:57 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -55,18 +55,20 @@ int usage(void) {
 	  "    -i <file>: Write hit data to <file>\n"
 	  "    -T <trigmode>:\n"
 	  "       Set trigger mode to <trigmode> (0=testpat 1=cpu 2=disc)\n"
+          "    -Z <mode>: Set hit data compression mode (0==uncompressed 1==roadgrader)\n"
+	  "    -X <mode>: Set hit data format (0==engineering format 1==raw)\n"
 	  "    -A <ATWD>: Select ATWD (0 or 1) for hit data\n"
 	  "    -N <nch0>,<nch1>,<nch2>,<nch3>: Number of samples (0,16,32,64,128)\n"
 	  "                                    for each ATWD channel\n"
 	  "    -W <wch0>,<wch1>,<wch2>,<wch3>: Sample width (1 or 2 bytes), each chan.\n"
 	  "    -F <num>: Read out <num> (0..255) ATWD samples\n"
-	  "    -B: Set up (software-only) hit buffering\n"
+	  "    -B: Initialize hit buffering\n"
 	  "    -I <mode>,<up-pre>,<up-post>,<dn-pre>,<dn-pos>: Require local coincidence,\n"
 	  "       with the four time windows given in nsec.\n"
 	  "       Mode=1 (upper and lower enabled) 2 (upper only) 3 (lower only)\n"
-	  "    -O: Set up software data compression (needs -B option!)\n"
 	  "    -R <a0>,<a1>,<a2>,<a3>,<f> Set road-grader thresholds for both ATWDs and FADC\n"
 	  "    -p: Run pulser to generate SPE triggers in absence of real PMT\n"
+	  "    -P <rate>: Set pulser/heartbeat rate to <rate> Hz\n"
 	  "  If no message types are given, echo test will be used.\n"
 	  "    -L <Volts>: Set DOM high voltage (BE CAREFUL!). Volts == DAC units/2.\n"
 	  "  Roll-your-own Custom Messages:\n"
@@ -105,11 +107,14 @@ int setUpLC(int filep, int bufsiz, int mode, int up_pre_ns,
 	    int up_post_ns, int dn_pre_ns, int dn_post_ns);
 int clearLC(int filep, int bufsiz);
 int turnOffLC(int filep, int bufsiz);
-int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthresh[], 
-		     unsigned short fadc_thresh);
+int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
+			   unsigned short atwdthresh[], 
+			   unsigned short fadc_thresh);
 int setHighVoltage(int filep, int bufsiz, int hv);
 int highVoltageOff(int filep, int bufsiz);
-int doSWCompTest(int filep, int bufsiz);
+int setPulserRate(int filep, int bufsiz, int rate);
+int setCompression(int filep, int bufsiz, int mode);
+int setDataFormat(int filep, int bufsiz, int mode);
 
 #define EMPTY  0
 #define ECHO   1
@@ -161,6 +166,8 @@ int main(int argc, char *argv[]) {
   int askversion    = 0;
   int savehits      = 0;
   int trigMode      = 0;
+  int pulserRate    = 0;
+  int doPulserRate  = 0;
   int dopoll        = 0;
   int nsamps[4] = {0,0,0,0}, sampwids[4] = {2,2,2,2}, nadc = 0;
   int doCustom      = 0;
@@ -171,8 +178,7 @@ int main(int argc, char *argv[]) {
   int defineTrig    = 0;
   int defineEngrFmt = 0;
   int inflight      = 0;
-  int doswbuf       = 0;
-  int doswcomp      = 0;
+  int dohitbuf       = 0;
   int setthresh     = 0;
   int defineATWD    = 0;
   int whichATWD     = 0;
@@ -185,9 +191,12 @@ int main(int argc, char *argv[]) {
   int lcmode;
   int dolc=0, up_pre_ns, up_post_ns, dn_pre_ns, dn_post_ns;
   unsigned long long dtrwmin = 0, dtrwmax = 0;
-
+  int doFmt = 0, fmtMode = 0;
+  int doComp = 0, compMode = 0;
   while(1) {
-    char c = getopt(argc, argv, "QVvhcBOspi:d:E:M:H:D:m:w:f:T:N:W:F:C:R:A:S:L:I:");
+    char c = getopt(argc, argv, 
+		    "QVvhcBOspi:d:E:M:H:D:m:w:f:T:N:"
+		    "W:F:C:R:A:S:L:I:P:Z:X:");
     if (c == -1) break;
 
     switch(c) {
@@ -195,19 +204,21 @@ int main(int argc, char *argv[]) {
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
     case 's': stuffit = 1; break;
-    case 'B': doswbuf = 1; break;
-    case 'O': doswcomp = 1; break;
+    case 'B': dohitbuf = 1; break;
+    case 'X': doFmt = 1; fmtMode = atoi(optarg); break;
+    case 'Z': doComp = 1; compMode = atoi(optarg); break;
     case 'A': whichATWD = atoi(optarg); defineATWD = 0; break;
     case 'E': efreq = atoi(optarg); dopoll = 1; break;
     case 'M': mfreq = atoi(optarg); dopoll = 1; break;
     case 'H': hfreq = atoi(optarg); dopoll = 1; break;
     case 'p': dopulser = 1; break;
+    case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
     case 'I': if(sscanf(optarg, "%d,%d,%d,%d,%d", &lcmode,
 			&up_pre_ns, &up_post_ns, &dn_pre_ns,
 			&dn_post_ns)!=5) exit(usage());
       dolc = 1;
       break;
-    case 'R': if(sscanf(optarg, "%hu,%hu,%hu,%hu,%hu", 
+     case 'R': if(sscanf(optarg, "%hu,%hu,%hu,%hu,%hu", 
 			&atwd_thresh[0],&atwd_thresh[1],&atwd_thresh[2],&atwd_thresh[3],
 			&fadc_thresh)!=5) exit(usage());
       setthresh = 1;
@@ -406,7 +417,6 @@ int main(int argc, char *argv[]) {
   }
 
   if(hwival || cfival) {
-
     fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", hwival, cfival);
     if((r=domsg(filep, bufsiz, 1000,
                 DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
@@ -414,28 +424,6 @@ int main(int argc, char *argv[]) {
       fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
       exit(-1);
     }
-    fprintf(stderr,"OK.\n");
-  }
-
-  if(defineTrig) {
-    fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
-		(unsigned char) trigMode)) != 0) {
-      fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
-      exit(-1);
-    }
-
-    unsigned char trigModeCheck = 0xFF; 
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
-		&trigModeCheck)) != 0) {
-      fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
-      exit(-1);
-    }
-    if(trigModeCheck != trigMode) { 
-      fprintf(stderr,"DSC_GET_TRIG_MODE failed: trigModeCheck=%d trigMode=%d\n", trigModeCheck, trigMode);
-      exit(-1);
-    }
-    
     fprintf(stderr,"OK.\n");
   }
 
@@ -481,12 +469,44 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"OK.\n");
   }
 
-  /* Set up compression if desired */
-  if(doswcomp) {
-    if(setUpCompression(filep, bufsiz, setthresh, atwd_thresh, fadc_thresh)) {
-      fprintf(stderr,"Domapp software compression initialization failed.\n");
+  if(doPulserRate) {
+    if(setPulserRate(filep, bufsiz, pulserRate)) exit(-1);
+  }
+
+  if(doFmt) {
+    if(setDataFormat(filep, bufsiz, fmtMode)) exit(-1);
+    //printf("turned off data format!\n\n\n");
+  }
+
+  if(doComp) {
+    if(compMode == 1) {
+      if(setUpPedsAndThresholds(filep, bufsiz, setthresh, 
+				atwd_thresh, fadc_thresh)) exit(-1);
+    }
+    //printf("turned off compression!!!!!\n\n\n"); //
+    if(setCompression(filep, bufsiz, compMode)) exit(-1);
+  }
+
+  if(defineTrig) {
+    fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
+    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
+		(unsigned char) trigMode)) != 0) {
+      fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
       exit(-1);
     }
+
+    unsigned char trigModeCheck = 0xFF; 
+    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
+		&trigModeCheck)) != 0) {
+      fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
+      exit(-1);
+    }
+    if(trigModeCheck != trigMode) { 
+      fprintf(stderr,"DSC_GET_TRIG_MODE failed: trigModeCheck=%d trigMode=%d\n", trigModeCheck, trigMode);
+      exit(-1);
+    }
+    
+    fprintf(stderr,"OK.\n");
   }
 
   if(dohv) {
@@ -504,18 +524,9 @@ int main(int argc, char *argv[]) {
     clearLC(filep, bufsiz);
   }
 
-  if(doswbuf) {
-    if(beginRun(filep, bufsiz, dopulser)) {
+  if(dohitbuf && beginRun(filep, bufsiz, dopulser)) {
       fprintf(stderr,"Domapp buffering initialization failed.\n");
       exit(-1);
-    }
-    /* Inject test pattern data after we start run so events are counted */
-    if(doswcomp && DO_TEST_INJECT) {
-      if(doSWCompTest(filep, bufsiz)) {
-	fprintf(stderr,"Domapp sw compression test failed.\n");
-	exit(-1);
-      }
-    }
   }
 
   /* keep gettimeofday near beginRun to time run correctly */
@@ -673,7 +684,7 @@ int main(int argc, char *argv[]) {
 	  fprintf(stderr,"\n");
 	}
 
-	if(doswbuf && dtsec >= secDuration && ! done) {
+	if(dohitbuf && dtsec >= secDuration && ! done) {
 	  if(endRun(filep, bufsiz, dopulser)) {
 	    fprintf(stderr,"endRun failed.\n");
 	    exit(-1);
@@ -858,12 +869,6 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
 int endRun(int filep, int bufsiz, int dopulser) {
   int r;
 
-  if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
-    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
-    return 1;
-  }
-
   if(dopulser) {
     fprintf(stderr,"Turning off front-end pulser... \n");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
@@ -871,6 +876,12 @@ int endRun(int filep, int bufsiz, int dopulser) {
       exit(-1);
     }
     fprintf(stderr,"OK.\n");
+  }
+
+  if((r=domsg(filep, bufsiz, 1000,
+              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
+    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
+    return 1;
   }
 
   return 0;
@@ -919,12 +930,6 @@ int turnOffLC(int filep, int bufsiz) {
 int beginRun(int filep, int bufsiz, int dopulser) {
   int r;
 
-  if((r=domsg(filep, bufsiz, 1000,
-	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
-    fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
-    return 1;
-  }
-
   if(dopulser) {
     fprintf(stderr,"Turning on front-end pulser... \n");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_ON, ""))) {
@@ -934,26 +939,22 @@ int beginRun(int filep, int bufsiz, int dopulser) {
     fprintf(stderr,"OK.\n");
   }
 
-  return 0;
-}
-
-
-int doSWCompTest(int filep, int bufsiz) {
-  int r;
   if((r=domsg(filep, bufsiz, 1000,
-              DATA_ACCESS, DATA_ACC_TEST_SW_COMP, "")) != 0) {
+	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
   }
+
   return 0;
 }
 
 
-int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthresh[],
-                     unsigned short fadc_thresh) {
+int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
+			   unsigned short atwdthresh[],
+			   unsigned short fadc_thresh) {
   int targetATWD0 = 1000;
   int targetATWD1 = 1000;
-  int targetFADC  = 1000;
+  int targetFADC  = 2000;
 
   int r;
   if((r=domsg(filep, bufsiz, 1000,
@@ -963,8 +964,6 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
     return 1;
   }
 
-  fprintf(stderr,"pedestal collection succeeded.\n");
-  
   unsigned long nped0, nped1, nadc;
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
@@ -973,10 +972,11 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
     return 1;
   }
   
-  if(nped0 != targetATWD0 || nped1 != targetATWD1 || nadc != targetFADC) {
-    fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) disagree w/ target (%d, %d, %d)!\n", nped0, nped1, nadc,
+  if(nped0 < targetATWD0 || nped1 < targetATWD1 || nadc < targetFADC) {
+    fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) are below targets (%d, %d, %d)!\n", nped0, nped1, nadc,
 	   targetATWD0, targetATWD1, targetFADC);
-    return 1;
+    fprintf(stderr, "Warning... DISABLING enforcement of this check...\n\n");
+    //return 1;
   }
   
   fprintf(stderr,"Collected %ld ATWD0, %ld ATWD1 and %ld FADC pedestals.\n", nped0, nped1, nadc);
@@ -992,11 +992,10 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
     free(pedAvgs);
     return 1;
   } 
-  
   free(pedAvgs);
+
   memset(pedavg, 0, 2*4*ATWDCHSIZ*sizeof(unsigned short));
   memset(fadcavg, 0, FADCSIZ*sizeof(unsigned short));
-  free(msgReply);
 
   int ichip, ich, isamp;
   int of = 0;
@@ -1019,6 +1018,8 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
     fprintf(stderr,"%hu ", fadcavg[isamp]);
   }
   fprintf(stderr,"\n");
+
+  free(msgReply);
 
   /* Set baseline (RoadGrader) thresholds */
   if(dothresh) {
@@ -1047,21 +1048,6 @@ int setUpCompression(int filep, int bufsiz, int dothresh, unsigned short atwdthr
   }
   fprintf(stderr,"FADC threshold = %d\n", fadc_thresh);
 
-  if((r=domsg(filep, bufsiz, 1000,
-              DATA_ACCESS, DATA_ACC_SET_SW_DATA_COMPRESSION, "-C", 1)) != 0) {
-    fprintf(stderr,"DATA_ACC_SET_SW_DATA_COMPRESSION failed: %d.\n", r);
-    return 1;
-  }
-
-  unsigned char isSet;
-
-  if((r=domsg(filep, bufsiz, 1000,
-              DATA_ACCESS, DATA_ACC_GET_SW_DATA_COMPRESSION, "+C", &isSet)) != 0) {
-    fprintf(stderr,"DATA_ACC_GET_SW_DATA_COMPRESSION failed: %d.\n", r);
-    return 1;
-  }
-
-  fprintf(stderr,"Software data compression is %s.\n", isSet?"ON":"OFF");
   return 0;
 }
 
@@ -1072,6 +1058,65 @@ int getRandInt(int min, int max) {
   return min + (int) (x*n);
 }
 
+
+int setPulserRate(int filep, int bufsiz, int rate) {
+  int r;
+  fprintf(stderr,"Setting pulser rate to %d Hz...\n", rate);
+  if((r=domsg(filep, bufsiz, 1000,
+              DOM_SLOW_CONTROL, DSC_SET_PULSER_RATE, "-S", (unsigned short) rate)) != 0) {
+    fprintf(stderr,"DSC_SET_PULSER_RATE failed: %d\n", r);
+    return 1;
+  } else {
+    fprintf(stderr,"OK.\n");
+  }
+  return 0;
+}
+
+int setCompression(int filep, int bufsiz, int mode) {
+  int r;
+  fprintf(stderr,"Setting DOM Data compression type to %d... ", mode);
+  if((r=domsg(filep, bufsiz, 1000,
+	      DATA_ACCESS, DATA_ACC_SET_COMP_MODE, "-C", (unsigned char) mode)) != 0) {
+    fprintf(stderr, "DATA_ACC_SET_COMP_MODE failed: %d\n", r);
+    return 1;
+  }
+  unsigned char mget;
+  if((r=domsg(filep, bufsiz, 1000,
+              DATA_ACCESS, DATA_ACC_GET_COMP_MODE, "+C", &mget)) != 0) {
+    fprintf(stderr, "DATA_ACC_GET_COMP_MODE failed: %d\n", r);
+    return 1;
+  }
+  if(mget != (unsigned char) mode) {
+    fprintf(stderr, "Compression mode: set (%d) != get (%d).\n",
+	    (int) mode, (int) mget);
+    return 1;
+  }
+  fprintf(stderr,"OK.\n");
+  return 0;
+}
+
+int setDataFormat(int filep, int bufsiz, int fmt) {
+  int r;
+  fprintf(stderr,"Setting DOM Data format to %d... ", fmt);
+  if((r=domsg(filep, bufsiz, 1000,
+              DATA_ACCESS, DATA_ACC_SET_DATA_FORMAT, "-C", (unsigned char) fmt)) != 0) {
+    fprintf(stderr, "DATA_ACC_SET_DATA_FORMAT failed: %d\n", r);
+    return 1;
+  }
+  unsigned char mfmt;
+  if((r=domsg(filep, bufsiz, 1000,
+              DATA_ACCESS, DATA_ACC_GET_DATA_FORMAT, "+C", &mfmt)) != 0) {
+    fprintf(stderr, "DATA_ACC_GET_DATA_FORMAT failed: %d\n", r);
+    return 1;
+  }
+  if(mfmt != (unsigned char) fmt) {
+    fprintf(stderr, "Set data format: set (%d) != get (%d).\n",
+            (int) fmt, (int) mfmt);
+    return 1;
+  }
+  fprintf(stderr,"OK.\n");
+  return 0;
+}
 
 int setHighVoltage(int filep, int bufsiz, int hvdac) {
   int r;
