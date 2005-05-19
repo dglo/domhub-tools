@@ -7,7 +7,8 @@
 package MY_PACKAGE;
 use strict;
 use Getopt::Long;
-sub testDOM; sub loadFPGA; sub docmd; sub haveError; sub filly;
+sub testDOM;     sub loadFPGA; sub docmd; sub hadError; sub filly;
+sub hadWarning; sub printWarning;
 sub printc;  sub delim;
 
 
@@ -115,7 +116,7 @@ print "\n";
 
 foreach my $dom (@doms) {
     mydie "Test of domapp (image ".(defined $image?"$image":"in flash").") on $dom failed!\n"
-	."$lasterr" unless testDOM($dom);
+	."$lasterr"."$O: FAIL\n\n" unless testDOM($dom);
 }
 
 print "\n$O: SUCCESS at '".(scalar localtime)."'\n";
@@ -135,20 +136,16 @@ sub testDOM {
 	return 0 unless domappmode($dom);
     }
 
-    ###
-    return 0 unless collectDiscTrigDataCompressed($dom);
-    ###
-    
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
-    return 0 unless shortEchoTest($dom);
     return 0 unless asciiMoniTest($dom);
+    return 0 unless collectDiscTrigDataCompressed($dom);
+    return 0 unless shortEchoTest($dom);
     return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
     return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
-    return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
     return 0 unless LCMoniTest($dom);
@@ -324,11 +321,12 @@ sub LCMoniTest {
 	my $gotwin = 0;
 	my $gotmode = 0;
 	for(@dmtext) {
-	    if(haveError $_) {
+	    if(hadError $_) {
 		$lasterr = "Test of monitoring of LC state changes failed:\n"
 		    ."Had error or warning in monitoring stream!\n".$_;
 		return 0;
 	    }
+	    printWarning($_, $moniFile) if hadWarning $_;
 # STATE CHANGE: LC WIN <- (100, 100, 100, 100)
 	    if(/LC WIN <- \((\d+), (\d+), (\d+), (\d+)\)/) {
 		if($1 ne $win0 || $2 ne $win1 || $3 ne $win2 || $4 ne $win3) {
@@ -381,11 +379,14 @@ sub asciiMoniTest {
 	print "Test failed: desired monitoring string was not present.\n";
 	print "Monitoring output:\n$dmtext\n";
 	return 0;
-    } elsif(haveError $dmtext) {
+    } elsif(hadError $dmtext) {
 	print "Test failed: monitoring stream had error or warning.\n";
         print "Monitoring output:\n$dmtext\n";
         return 0;
     } else {
+	for(split '\n', $dmtext) {
+	    printWarning($_, $moniFile) if hadWarning $_;
+	}
         my $details = $detailed?" (got self test ASCII monitoring record)":"";
         print "OK$details.\n";
     }
@@ -425,10 +426,11 @@ sub swConfigMoniTest {
 	if(/CF EVT/) {
 	    $gotone++;
 	    # print "\n$_";
-	} elsif(haveError $_) {
+	} elsif(hadError $_) {
 	    $lasterr = "Monitoring stream had error: $_\n";
 	    return 0;
 	}
+	printWarning($_, $moniFile) if hadWarning($_);
     }
     if($gotone) {
         my $details = $detailed?" (got one or more software config. monitoring recs.)":"";
@@ -459,10 +461,11 @@ sub hwConfigMoniTest {
 	if(/HW EVT/) {
 	    $gotone++;
 	    # print "\n$_";
-	} elsif(haveError $_) {
+	} elsif(hadError $_) {
 	    $lasterr = "Have monitoring warning or error!\n$_";
 	    return 0;
 	}
+	printWarning($_, $moniFile) if hadWarning $_;
     }
     if($gotone) {
         my $details = $detailed?" (got one or more hardware config. monitoring recs.)":"";
@@ -571,7 +574,14 @@ sub docmd {
     return $rez;
 }
 
-sub haveError { my $s = shift; return 1 if ($s =~ /warning/i || $s =~ /error/i); return 0; }
+sub hadError { my $s = shift; return 1 if ($s =~ /error/i); return 0; }
+sub hadWarning { my $s = shift; return 1 if ($s =~ /warning/i); return 0; }
+sub printWarning { 
+    my $s = shift; 
+    $s =~ s/\t//g;
+    my $f = shift; 
+    print "\nWarning:\n'$s'\n... appeared in monitoring stream $f.\n";
+}
 
 sub doShortHitCollection {
     my $dom      = shift; die unless defined $dom;
@@ -619,8 +629,8 @@ sub doShortHitCollection {
 	    .   $result
 	    .   `decodemoni -v last.moni`;
     }
-    my $ha        = haveError $moni;
-    if(haveError $moni || $result !~ /Done \((\d+) usec\)\./) {
+    my $ha        = hadError $moni;
+    if(hadError $moni || $result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short $name run failed::\n".
 	    "Command: $cmd\n".
 	    "Result:\n$result\n\n".
@@ -629,7 +639,9 @@ sub doShortHitCollection {
 	    if $ha;
         return 0;
     }
-
+    for(split '\n', $moni) {
+	printWarning($_, $monFile) if hadWarning($_);
+    }
     if($dataFmt == 0 && defined $pulsrate) {
 	my $nforced   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "CPU Trigger" | wc -l`;
 	if($nforced =~ /^\s+(\d+)$/ && $1 > 0) {
