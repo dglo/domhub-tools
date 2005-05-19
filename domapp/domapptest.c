@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.10 2005-05-19 19:30:40 jacobsen Exp $
+   $Id: domapptest.c,v 1.11 2005-05-19 20:52:33 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -869,6 +869,12 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
 int endRun(int filep, int bufsiz, int dopulser) {
   int r;
 
+  if((r=domsg(filep, bufsiz, 1000,
+              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
+    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
+    return 1;
+  }
+
   if(dopulser) {
     fprintf(stderr,"Turning off front-end pulser... \n");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
@@ -876,12 +882,6 @@ int endRun(int filep, int bufsiz, int dopulser) {
       exit(-1);
     }
     fprintf(stderr,"OK.\n");
-  }
-
-  if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
-    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
-    return 1;
   }
 
   return 0;

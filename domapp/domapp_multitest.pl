@@ -139,16 +139,12 @@ sub testDOM {
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
+    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 if $dohv && !setHVTest($dom);
-    return 1;
-    return 0 unless collectDiscTrigDataCompressed($dom);
-    return 0 unless collectDiscTrigDataCompressed($dom);
-    return 0 unless collectDiscTrigDataCompressed($dom);
-    return 0 unless collectDiscTrigDataCompressed($dom);
+    print "SKIPPING collectDiscTrigDataCompressed\n"; # return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
-    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
     return 0 unless swConfigMoniTest($dom);
@@ -189,7 +185,7 @@ sub collectDiscTrigDataTestNoLC {
 sub collectPulserDataTestNoLC {
     my $dom = shift;
     return doShortHitCollection($dom, DISCTRIG, "pulserTrigger", 0, 0, 4, 1, 
-				$speThresh, undef, CMP_NONE, FMT_ENG);
+				$speThresh, 10, CMP_NONE, FMT_ENG);
 }
 
 sub varyHeartbeatRateTestNoLC {
@@ -673,9 +669,13 @@ sub doShortHitCollection {
     for(split '\n', $moni) {
 	printWarning($_, $monFile) if hadWarning($_);
     }
+
+    # Check for trigger rate consistency
     if($dataFmt == 0 && defined $pulsrate) {
-	my $nforced   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "CPU Trigger" | wc -l`;
-	if($nforced =~ /^\s+(\d+)$/ && $1 > 0) {
+	# Look for discriminator trigger if running in pulser mode:
+	my $desiredType = $puls ? "Discriminator Trigger" : "CPU Trigger";
+	my $nhits   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
+	if($nhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	    my $nhits = $1;
 	    my $ratestr;
             my $evrate = $nhits/$dur;
@@ -683,11 +683,34 @@ sub doShortHitCollection {
 		$lasterr = "Measured forced trigger rate ($evrate Hz) doesn't match requested rate ($pulsrate Hz).\n";
 		return 0;
 	    } else {
-		printf "(heartbeat rate %2.2f Hz) ", $evrate;
+		printf "($desiredType rate %2.2f Hz) ", $evrate;
 	    }
 	} else {
 	    $lasterr = "Didn't get any forced trigger data - check $engFile.\n".
 		"Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
+	    return 0;
+	}
+    }
+    # Check for SPE rate consistency if rate is defined and pulser in use:
+    if($dataFmt == 0 && defined $pulsrate && $puls) {
+	my @moni    = `decodemoni -v $monFile | grep HW`;
+	my $spesum = 0;
+	my $nspe   = 0;
+	for(@moni) {
+	    my $spe = (split '\s+')[32];
+	    # print "Monitoring string $_ -> $spe\n";
+	    $nspe++;
+	    $spesum += $spe;
+	}
+	if($nspe == 0) {
+	    $lasterr = "No HW monitoring records in $monFile... check $monFile.\n"
+		.       "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
+	    return 0;
+	}
+	my $speAvg = $spesum / $nspe;
+	if($speAvg < $pulsrate/2.5 || $speAvg > $pulsrate*2.5) {
+	    $lasterr = "Measured SPE discriminator rate ($speAvg Hz) doesn't match requested rate ($pulsrate Hz).\n"
+		.      "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
 	    return 0;
 	}
     }
