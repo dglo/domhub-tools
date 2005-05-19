@@ -139,6 +139,11 @@ sub testDOM {
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
+    return 0 if $dohv && !setHVTest($dom);
+    return 1;
+    return 0 unless collectDiscTrigDataCompressed($dom);
+    return 0 unless collectDiscTrigDataCompressed($dom);
+    return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless collectCPUTrigDataTestNoLC($dom);
@@ -277,6 +282,23 @@ sub versionTest {
         my $details = $detailed?", got good version report from domapptest":"";
 	print "OK ('$1'$details).\n";
     } 
+    return 1;
+}
+
+sub setHVTest {
+    my $dom = shift; die unless defined $dom;
+    printc "Testing HV set/get (not really)... ";
+    my $moniFile = "hv_test_$dom.moni";
+    my $cmd = "$dat -L 500 -M1 -m $moniFile $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result !~ /Done \((\d+) usec\)\./) {
+	$lasterr = "Test of setting HV failed:\n"
+	    .      "Command: $cmd\n"
+	    .      "Result:\n$result\n\n"
+	    .      "Monitoring:\n".`decodemoni -v $moniFile 2>&1`;	        
+	return 0;
+    }
+    print "OK.";
     return 1;
 }
 

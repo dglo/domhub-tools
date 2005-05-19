@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.9 2005-05-19 00:07:57 jacobsen Exp $
+   $Id: domapptest.c,v 1.10 2005-05-19 19:30:40 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -1122,7 +1122,7 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
   int r;
 #define MAXHV      2048 /* VOLTS */
 #define MAXHVDELTA 50   /* Volts */
-#define MAXTRIALS  100  
+#define MAXTRIALS  15
 #define SLEEPMS    300 
   if(hvdac > 2*MAXHV) {
     fprintf(stderr,"setHighVoltage: voltage too high (%d V, %d is maximum)!\n",
