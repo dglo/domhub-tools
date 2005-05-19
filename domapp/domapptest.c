@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.11 2005-05-19 20:52:33 jacobsen Exp $
+   $Id: domapptest.c,v 1.12 2005-05-19 21:34:59 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -509,8 +509,10 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"OK.\n");
   }
 
+  int hvon = 0;
   if(dohv) {
     if(setHighVoltage(filep, bufsiz, hvdac)) exit(-1);
+    hvon = 1;
   }
 
   /* Set up local coincidence event selection for buffering */
@@ -694,8 +696,14 @@ int main(int argc, char *argv[]) {
 	  }
 	  done = 1;
 	}
+	/* Turn off HV when duration is up so we can see it in 
+	   monitoring stream */
+	if(dtsec >= secDuration && dohv && hvon) {
+	  hvon = 0;
+	  highVoltageOff(filep, bufsiz); /* We'll do again @ end of loop to be sure */
+	}
 
-	/* Add 1 to run length after run stop to get last monitoring, etc. events */
+	/* Add 1 sec to run length after run stop to get last monitoring, etc. events */
 	if(dtsec >= secDuration+1) {
 	  fprintf(stderr,"Done (%lld usec).\n",dt);
 	  break;

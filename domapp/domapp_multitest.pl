@@ -139,14 +139,14 @@ sub testDOM {
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
-    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 if $dohv && !setHVTest($dom);
-    print "SKIPPING collectDiscTrigDataCompressed\n"; # return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless shortEchoTest($dom);
+    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
+    print "SKIPPING collectDiscTrigDataCompressed\n"; # return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
     return 0 unless LCMoniTest($dom);
