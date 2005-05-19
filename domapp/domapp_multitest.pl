@@ -156,9 +156,9 @@ sub testDOM {
 	return 0 unless flasherTest($dom);
     }
 
-    if(defined $dohv) {
-	return 0 unless collectDiscTrigDataTestNoLC($dom);
-    }
+#    if(defined $dohv) {
+#	return 0 unless collectDiscTrigDataTestNoLCWithHV($dom);
+#    }
 
     return 1;
 }
@@ -170,39 +170,90 @@ use constant FMT_RG   => 1;
 use constant CMP_NONE => 0;
 use constant CMP_RG   => 1;
 
+sub testHash {
+    my %arg = @_;
+    foreach my $key (keys %arg) {
+	print "$key -> $arg{$key}\n";
+    }
+}
+
 sub collectCPUTrigDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, CPUTRIG, "cpuTrigger", 0, 0, 4, 0, 
-				0, undef, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom, 
+				Trig        => CPUTRIG,
+				Name        => "cpuTrigger", 
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 0,
+				Threshold   => 0, 
+				PulserRate  => 1,
+				Compression => CMP_NONE,
+				Format      => FMT_ENG);
 }
 
 sub collectDiscTrigDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "discTrigger", 0, 0, 4, 0, 
-				$speThresh, undef, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "discTrigger",
+                                LcUp        => 0,
+                                LcDn        => 0,
+                                Duration    => 4,
+                                DoPulser    => 0,
+                                Threshold   => $speThresh,
+                                PulserRate  => 1,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG);
 }
 
 sub collectPulserDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "pulserTrigger", 0, 0, 4, 1, 
-				$speThresh, 10, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "pulserTrigger",
+                                LcUp        => 0,
+                                LcDn        => 0,
+                                Duration    => 4,
+                                DoPulser    => 1,
+                                Threshold   => $speThresh,
+                                PulserRate  => 10,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG);
 }
 
 sub varyHeartbeatRateTestNoLC {
-    my $dom       = shift;
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_10Hz",  
-					 0, 0, 4, 0, $speThresh, 10, CMP_NONE, FMT_ENG);
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_100Hz", 
-					 0, 0, 4, 0, $speThresh, 100, CMP_NONE, FMT_ENG);
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_1Hz",
-					 0, 0, 4, 0, $speThresh, 1, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    my @rates = (10, 100, 1);
+    foreach my $rate (@rates) {
+	return 0 unless doShortHitCollection(DOM         => $dom,
+					     Trig        => DISCTRIG,
+					     Name        => "heartbeat_".$rate."Hz",
+					     LcUp        => 0,
+					     LcDn        => 0,
+					     Duration    => 4,
+					     DoPulser    => 0,
+					     Threshold   => $speThresh,
+					     PulserRate  => $rate,
+					     Compression => CMP_NONE,
+					     Format      => FMT_ENG);
+    }
     return 1;
 }
 
 sub collectDiscTrigDataCompressed {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "discTrigCompr", 0, 0, 4, 0, 
-				$speThresh, 2000, CMP_RG, FMT_RG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+				Trig        => DISCTRIG,
+				Name        => "discTrigCompr",
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 0,
+				Threshold   => $speThresh,
+				PulserRate  => 2000,
+				Compression => CMP_RG,
+				Format      => FMT_RG);
 }
 
 sub delim {
@@ -284,7 +335,7 @@ sub versionTest {
 
 sub setHVTest {
     my $dom = shift; die unless defined $dom;
-    printc "Testing HV set/get (not really)... ";
+    printc "Testing HV set/get... ";
     my $moniFile = "hv_test_$dom.moni";
     my $cmd = "$dat -L 500 -d 2 -w 1 -f 1 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
@@ -303,7 +354,7 @@ sub setHVTest {
 	    .      "Monitoring:\n$moni\n";
 	return 0;
     }
-    print "OK.";
+    print "OK.\n";
     return 1;
 }
 
@@ -393,7 +444,7 @@ sub asciiMoniTest {
     my $dom = shift;
     printc "Testing ASCII monitoring... ";
     my $moniFile = "ascii_$dom.moni";
-    my $cmd = "$dat -d1 -M1 -m $moniFile $dom 2>&1";
+    my $cmd = "$dat -d0 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short monitoring test failed:\n".
@@ -611,17 +662,18 @@ sub printWarning {
 }
 
 sub doShortHitCollection {
-    my $dom      = shift; die unless defined $dom;
-    my $type     = shift; die unless defined $type;
-    my $name     = shift; die unless defined $name;
-    my $lcup     = shift; die unless defined $lcup;
-    my $lcdn     = shift; die unless defined $lcdn;
-    my $dur      = shift; die unless defined $dur;
-    my $puls     = shift; die unless defined $puls;
-    my $thresh   = shift; die unless defined $thresh;
-    my $pulsrate = shift; # Leave undefined to accept default
-    my $compMode = shift; # ""
-    my $dataFmt  = shift; # ""
+    my %args     = @_;
+    my $dom      = $args{DOM};         die unless defined $dom;
+    my $type     = $args{Trig};        die unless defined $type;
+    my $name     = $args{Name};        die unless defined $name;
+    my $lcup     = $args{LcUp};        die unless defined $lcup;
+    my $lcdn     = $args{LcDn};        die unless defined $lcdn;
+    my $dur      = $args{Duration};    die unless defined $dur;
+    my $puls     = $args{DoPulser};    die unless defined $puls;
+    my $thresh   = $args{Threshold};   die unless defined $thresh;
+    my $pulsrate = $args{PulserRate};  # Leave undefined to accept default
+    my $compMode = $args{Compression}; # ""
+    my $dataFmt  = $args{Format};      # ""
 
     printc "Collecting $name (trigger type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
