@@ -1,7 +1,7 @@
 /* decodemoni.c : C program to decode/test monitoring data from DOM
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started May, 2004
-   $Id: decodemoni.c,v 1.1 2005-05-17 21:21:26 jacobsen Exp $
+   $Id: decodemoni.c,v 1.2 2005-05-19 20:10:16 jacobsen Exp $
 
    Decode monitor data to make sure it makes sense
 */
@@ -413,7 +413,19 @@ int main(int argc, char *argv[]) {
 		   up_pre, up_post, dn_pre, dn_post);
 	  }
 	  break;
-	default: 
+	case DSC_ENABLE_PMT_HV:
+	  printf("\tSTATE CHANGE: ENABLE PMT HV\n");
+	  break;
+	case DSC_SET_PMT_HV:
+	  {
+	    unsigned short hvdac = unpackShort(mbuf+2);
+	    printf("\tSTATE CHANGE: SET PMT HV (%hu DAC, %hu V)\n", hvdac, hvdac/2);
+	  }
+	  break;
+	case DSC_DISABLE_PMT_HV:
+          printf("\tSTATE CHANGE: DISABLE PMT HV\n");
+          break;
+       	default: 
 	  printf("\tSTATE CHANGE TYPE 0x%02x\n", mbuf[1]);
 	  break;
 	}

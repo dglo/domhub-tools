@@ -242,6 +242,7 @@ sub loadFPGA {
     if($result =~ /SUCCESS/) { 
         my $details = $detailed?" (se.pl script reported success)":"";
         print "OK$details.\n";
+	sleep 1;
     } else {
 	$lasterr = "Load of FPGA file failed.  Transcript:\n$result\n";
 	return 0;
@@ -289,13 +290,21 @@ sub setHVTest {
     my $dom = shift; die unless defined $dom;
     printc "Testing HV set/get (not really)... ";
     my $moniFile = "hv_test_$dom.moni";
-    my $cmd = "$dat -L 500 -M1 -m $moniFile $dom 2>&1";
+    my $cmd = "$dat -L 500 -d 2 -w 1 -f 1 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
+	my $moni = `decodemoni -v $moniFile 2>&1`;
+	if($moni eq "") {
+	    my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
+	    my $result     = docmd $getMoniCmd;
+	    $moni = "[original EMPTY -- following was fetched from domapp a second time around:]\n"
+		.   $result
+		.   `decodemoni -v last.moni`;
+	}
 	$lasterr = "Test of setting HV failed:\n"
 	    .      "Command: $cmd\n"
 	    .      "Result:\n$result\n\n"
-	    .      "Monitoring:\n".`decodemoni -v $moniFile 2>&1`;	        
+	    .      "Monitoring:\n$moni\n";
 	return 0;
     }
     print "OK.";

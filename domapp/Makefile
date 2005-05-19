@@ -1,11 +1,17 @@
 # Makefile for domhub-tools/domapp
 # Jacobsen
-# $Id: Makefile,v 1.6 2005-05-17 20:53:20 jacobsen Exp $
+# $Id: Makefile,v 1.7 2005-05-19 20:10:16 jacobsen Exp $
 
 INSTALL_BIN = /usr/local/bin
 
 all:
-	make domapptest decomp
+	make domapptest decomp decodemoni
+
+decodemoni: decodemoni.c domapp.h
+	gcc -Wall -o decodemoni decodemoni.c
+
+decodeeng: decodeeng.c domapp.h
+	gcc -Wall -o decodeeng decodeeng.c
 
 domapptest: domapptest.c domapp.h
 	gcc -Wall -o domapptest domapptest.c
