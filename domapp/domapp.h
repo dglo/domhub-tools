@@ -63,6 +63,10 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DATA_ACC_GET_SW_DATA_COMPRESSION_FORMAT 21
 #define DATA_ACC_RESET_LBM 22
 #define DATA_ACC_GET_FB_SERIAL 23
+#define DATA_ACC_SET_DATA_FORMAT   24
+#define DATA_ACC_GET_DATA_FORMAT   25
+#define DATA_ACC_SET_COMP_MODE     26
+#define DATA_ACC_GET_COMP_MODE     27
 
 #define DSC_READ_ALL_ADCS 10
 #define DSC_READ_ONE_ADC 11
@@ -123,7 +127,11 @@ int getMsg(int filep, DOMMSG * m, int bufsiz, int maxtries) {
 
   /* Do first read to get message length */
   int nr = read(filep, buf, bufsiz);
-  if(nr < MSG_HDR_LEN) { free(buf); return nr; }
+  if(nr < MSG_HDR_LEN) { 
+    //fprintf(stderr, "getMsg: Short read (%d bytes) of header!\n", nr);
+    free(buf); 
+    return nr;
+  }
 
   int databytes = nr-MSG_HDR_LEN; // >= 0
 
@@ -132,11 +140,11 @@ int getMsg(int filep, DOMMSG * m, int bufsiz, int maxtries) {
 
   int datalen = msgDataLen(m);
   if(datalen > bufsiz) {
-    printf("%d byte message too large, exceeds max=%d bytes.\nHeader=(", datalen, bufsiz);
+    fprintf(stderr,"%d byte message too large, exceeds max=%d bytes.\nHeader=(", datalen, bufsiz);
     int i;
-    for(i=0;i<8;i++) printf( "%02x ",(int)m->head.h[i]);
-    for(i=0;i<8;i++) printf(" %c",m->head.h[i]>33&&m->head.h[i]<126?m->head.h[i]:'X');
-    printf(").\n");
+    for(i=0;i<8;i++) fprintf(stderr, "%02x ",(int)m->head.h[i]);
+    for(i=0;i<8;i++) fprintf(stderr," %c",m->head.h[i]>33&&m->head.h[i]<126?m->head.h[i]:'X');
+    fprintf(stderr,").\n");
     free(buf);
     exit(-1); /* Be drastic for now */
   }
@@ -155,12 +163,12 @@ int getMsg(int filep, DOMMSG * m, int bufsiz, int maxtries) {
       }
       continue;
     } else if(nr < 1) {
-      printf("Short or erroneous read in middle of message! nr=%d errno=%d.\n", nr, errno);
+      fprintf(stderr,"Short or erroneous read in middle of message! nr=%d errno=%d.\n", nr, errno);
       free(buf);
       exit(-1);
     } 
     if(databytes+nr > MAX_DATA_LEN) {
-      printf("Message overflow!  databytes=%d nr=%d MAX_DATA_LEN=%d\n", 
+      fprintf(stderr,"Message overflow!  databytes=%d nr=%d MAX_DATA_LEN=%d\n", 
 	     databytes, nr, MAX_DATA_LEN);
       free(buf);
       exit(-1);
@@ -199,14 +207,14 @@ int sendMsg(int filep, DOMMSG * m) {
   /* send it down */
 #ifdef DEBUGSENDMSG
   int i;
-  printf("MSG "); 
+  fprintf(stderr,"MSG "); 
   for(i=0; i<msglen; i++) {
-    printf("0x%02x ", buf[i]);
+    fprintf(stderr,"0x%02x ", buf[i]);
   } 
-  printf("\n");
+  fprintf(stderr,"\n");
 #endif
   int nw = write(filep, buf, msglen);
-  //printf("datalen=%d hdrlen=%d msglen=%d nw=%d", datalen, MSG_HDR_LEN, msglen, nw);
+  //fprintf(stderr,"datalen=%d hdrlen=%d msglen=%d nw=%d", datalen, MSG_HDR_LEN, msglen, nw);
   /* deallocate */
   free(buf);
   return nw;
@@ -513,24 +521,40 @@ DOMMSG * newSetDataCompressionMsg(int toggle) {
 int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout) {
   int isend;
   while((isend = sendMsg(filep, s)) < 0) usleep(1000);
-  //printf("%d bytes.\n", isend);
   /* Get first reply */
   int i, len;
   for(i=0; !timeout || i<timeout; i++) {
     len = getMsg(filep, r, bufsiz, 100);
     if(len == -1) { // EAGAIN
       usleep(1000);
+    } else if(len < MSG_HDR_LEN) {
+      fprintf(stderr,"sendAndReceive: Short read (%d bytes) on message reply.\n", len);
+      return 1;
     } else {
       break;
     } /* length ok */
-  }  
+  }
+  if(len < MSG_HDR_LEN) {
+    fprintf(stderr,"getMsg: Timeout reading reply!!!\n");
+    return 1;
+  }
   if(r->head.hd.status != 1) {
-    printf("Bad message status (%d) in reply.\n", r->head.hd.status);
+    fprintf(stderr,"Bad message status (%d) in reply.\n", r->head.hd.status);
     return 1;
   }
   return 0;
 }
 
+void dumpMsg(FILE *fp, char *name, DOMMSG * m) {
+  fprintf(fp, "MSG %s, mt=%d mst=%d dlenHI=%d dlenLO=%d msgID=%d status=%d\n",
+	  name,
+	  m->head.hd.mt,
+	  m->head.hd.mst,
+	  m->head.hd.dlenHI,
+	  m->head.hd.dlenLO,
+	  m->head.hd.msgID,
+	  m->head.hd.status);
+}
 
 #define DOMAPP_ERR_NOMEM 1
 #define DOMAPP_ERR_MSG   2
@@ -603,11 +627,14 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
     free(m); 
     return DOMAPP_ERR_NOMEM;
   }
-  if(sendAndReceive(filep, bufsiz, m, reply, 100)) {
+  zeroMsg(reply);
+  int sar;
+  if((sar=sendAndReceive(filep, bufsiz, m, reply, 100)) != 0) {
+    fprintf(stderr,"sendAndReceive failed(%d)!\n", sar);
+    free(reply);
     free(m);
     return DOMAPP_ERR_MSG;
   }
-  free(m); /* Don't need it any more */
 
   va_start(ap, fmt);
   of    = 0;
@@ -639,7 +666,7 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
       break;
     case 'A': /* For character string, assume string all the rest of the message */
       if(of != 0) {
-        printf("Huh? (offset %d != 0)\n", of);
+        fprintf(stderr,"Huh? (offset %d != 0)\n", of);
 	free(reply);
 	return DOMAPP_ERR_ARG;
       }
@@ -652,7 +679,7 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
       break;
     case 'X': /* Like 'A', but not null-terminated */
       if(of != 0) {
-	printf("Huh? (offset %d != 0)\n", of);
+	fprintf(stderr,"Huh? (offset %d != 0)\n", of);
         free(reply);
         return DOMAPP_ERR_ARG;
       }
@@ -662,19 +689,24 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
       of += len;
       break;
     default: 
-      printf("Huh? (arg specifier %c)\n",X);
+      fprintf(stderr,"Huh? (arg specifier %c)\n",X);
       free(reply);
       return DOMAPP_ERR_ARG;
       break;
     }
   }
-  free(reply);
   va_end(ap);
   if(of != msgDataLen(reply)) {
-    printf("domsg: wanted %d bytes of arguments, got %d in data portion from DOM.\n", 
+    fprintf(stderr,"domsg: wanted %d bytes of arguments, got %d in data portion from DOM.\n", 
 	   of, msgDataLen(reply));
+    dumpMsg(stderr, "query", m);
+    dumpMsg(stderr, "reply", reply);
+    free(m); 
+    free(reply);
     return DOMAPP_ERR_MSG;
   }
+  free(m);
+  free(reply);
   return 0;
 }
 
