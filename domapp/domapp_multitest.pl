@@ -139,25 +139,27 @@ sub testDOM {
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
-    return 0 unless collectDiscTrigDataCompressed($dom);
+    return 0 if $dohv && !setHVTest($dom);
+    return 0 unless LCMoniTest($dom);
+    return 0 unless collectDiscTrigDataCompressedForced($dom);
+    return 0 unless collectDiscTrigDataCompressedPulser($dom);
     return 0 unless shortEchoTest($dom);
+    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
-    return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
-    return 0 unless LCMoniTest($dom);
 
     if(defined $doflasher) {
 	return 0 unless flasherVersionTest($dom);
 	return 0 unless flasherTest($dom);
     }
 
-    if(defined $dohv) {
-	return 0 unless collectDiscTrigDataTestNoLC($dom);
-    }
+#    if(defined $dohv) {
+#	return 0 unless collectDiscTrigDataTestNoLCWithHV($dom);
+#    }
 
     return 1;
 }
@@ -169,39 +171,105 @@ use constant FMT_RG   => 1;
 use constant CMP_NONE => 0;
 use constant CMP_RG   => 1;
 
+sub testHash {
+    my %arg = @_;
+    foreach my $key (keys %arg) {
+	print "$key -> $arg{$key}\n";
+    }
+}
+
 sub collectCPUTrigDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, CPUTRIG, "cpuTrigger", 0, 0, 4, 0, 
-				0, undef, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom, 
+				Trig        => CPUTRIG,
+				Name        => "cpuTrigger", 
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 0,
+				Threshold   => 0, 
+				PulserRate  => 1,
+				Compression => CMP_NONE,
+				Format      => FMT_ENG);
 }
 
 sub collectDiscTrigDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "discTrigger", 0, 0, 4, 0, 
-				$speThresh, undef, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "discTrigger",
+                                LcUp        => 0,
+                                LcDn        => 0,
+                                Duration    => 4,
+                                DoPulser    => 0,
+                                Threshold   => $speThresh,
+                                PulserRate  => 1,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG);
 }
 
 sub collectPulserDataTestNoLC {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "pulserTrigger", 0, 0, 4, 1, 
-				$speThresh, undef, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "pulserTrigger",
+                                LcUp        => 0,
+                                LcDn        => 0,
+                                Duration    => 4,
+                                DoPulser    => 1,
+                                Threshold   => $speThresh,
+                                PulserRate  => 10,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG);
 }
 
 sub varyHeartbeatRateTestNoLC {
-    my $dom       = shift;
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_10Hz",  
-					 0, 0, 4, 0, $speThresh, 10, CMP_NONE, FMT_ENG);
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_100Hz", 
-					 0, 0, 4, 0, $speThresh, 100, CMP_NONE, FMT_ENG);
-    return 0 unless doShortHitCollection($dom, DISCTRIG, "heartbeat_1Hz",
-					 0, 0, 4, 0, $speThresh, 1, CMP_NONE, FMT_ENG);
+    my $dom = shift; die unless defined $dom;
+    my @rates = (10, 100, 1);
+    foreach my $rate (@rates) {
+	return 0 unless doShortHitCollection(DOM         => $dom,
+					     Trig        => DISCTRIG,
+					     Name        => "heartbeat_".$rate."Hz",
+					     LcUp        => 0,
+					     LcDn        => 0,
+					     Duration    => 4,
+					     DoPulser    => 0,
+					     Threshold   => $speThresh,
+					     PulserRate  => $rate,
+					     Compression => CMP_NONE,
+					     Format      => FMT_ENG);
+    }
     return 1;
 }
 
-sub collectDiscTrigDataCompressed {
-    my $dom = shift;
-    return doShortHitCollection($dom, DISCTRIG, "discTrigCompr", 0, 0, 4, 0, 
-				$speThresh, 2000, CMP_RG, FMT_RG);
+sub collectDiscTrigDataCompressedForced {
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+				Trig        => DISCTRIG,
+				Name        => "comprForced",
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 0,
+				Threshold   => $speThresh,
+				PulserRate  => 2000,
+				Compression => CMP_RG,
+				Format      => FMT_RG);
+}
+
+sub collectDiscTrigDataCompressedPulser {
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+				Trig        => DISCTRIG,
+				Name        => "comprPulsr",
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 1,
+				Threshold   => $speThresh,
+				PulserRate  => 2000,
+				Compression => CMP_RG,
+				Format      => FMT_RG);
 }
 
 sub delim {
@@ -237,6 +305,7 @@ sub loadFPGA {
     if($result =~ /SUCCESS/) { 
         my $details = $detailed?" (se.pl script reported success)":"";
         print "OK$details.\n";
+	sleep 1;
     } else {
 	$lasterr = "Load of FPGA file failed.  Transcript:\n$result\n";
 	return 0;
@@ -280,6 +349,31 @@ sub versionTest {
     return 1;
 }
 
+sub setHVTest {
+    my $dom = shift; die unless defined $dom;
+    printc "Testing HV set/get... ";
+    my $moniFile = "hv_test_$dom.moni";
+    my $cmd = "$dat -L 500 -d 2 -w 1 -f 1 -M1 -m $moniFile $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result !~ /Done \((\d+) usec\)\./) {
+	my $moni = `decodemoni -v $moniFile 2>&1`;
+	if($moni eq "") {
+	    my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
+	    my $result     = docmd $getMoniCmd;
+	    $moni = "[original EMPTY -- following was fetched from domapp a second time around:]\n"
+		.   $result
+		.   `decodemoni -v last.moni`;
+	}
+	$lasterr = "Test of setting HV failed:\n"
+	    .      "Command: $cmd\n"
+	    .      "Result:\n$result\n\n"
+	    .      "Monitoring:\n$moni\n";
+	return 0;
+    }
+    print "OK.\n";
+    return 1;
+}
+
 sub shortEchoTest {
     my $dom = shift;
     printc "Performing short domapp echo message test... ";
@@ -300,14 +394,12 @@ sub shortEchoTest {
 sub LCMoniTest {
     my $dom = shift;
     printc "Testing monitoring reporting of LC state changes...\n";
-    my $moniFile = "lc_state_chg_$dom.moni";
     my $win0 = 100;
     my $win1 = 200;
-    my $win2 = 300;
-    my $win3 = 400;
     foreach my $mode(1..3) {
+	my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
 	printc "Mode $mode: ";
-	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1,$win2,$win3 $dom 2>&1";
+	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
 	my $result = docmd $cmd;
 	if($result !~ /Done \((\d+) usec\)\./) {
 	    $lasterr = "Test of monitoring of LC state changes failed:\n".
@@ -327,11 +419,12 @@ sub LCMoniTest {
 		return 0;
 	    }
 	    printWarning($_, $moniFile) if hadWarning $_;
-# STATE CHANGE: LC WIN <- (100, 100, 100, 100)
-	    if(/LC WIN <- \((\d+), (\d+), (\d+), (\d+)\)/) {
-		if($1 ne $win0 || $2 ne $win1 || $3 ne $win2 || $4 ne $win3) {
+# STATE CHANGE: LC WIN <- (100, 100)
+	    if(/LC WIN <- \((\d+), (\d+)\)/) {
+		if($1 ne $win0 || $2 ne $win1) {
 		    $lasterr =
-			"Window mismatch ($1 vs $win0, $2 vs $win1, $3 vs $win2, $4 vs $win3\n";
+			"Window mismatch ($1 vs $win0, $2 vs $win1\n"
+			."Line: $_\nFile: $moniFile\n";
 		    return 0;
 		} else {
 		    $gotwin = 1;
@@ -366,7 +459,7 @@ sub asciiMoniTest {
     my $dom = shift;
     printc "Testing ASCII monitoring... ";
     my $moniFile = "ascii_$dom.moni";
-    my $cmd = "$dat -d1 -M1 -m $moniFile $dom 2>&1";
+    my $cmd = "$dat -d0 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
         $lasterr = "Short monitoring test failed:\n".
@@ -584,17 +677,18 @@ sub printWarning {
 }
 
 sub doShortHitCollection {
-    my $dom      = shift; die unless defined $dom;
-    my $type     = shift; die unless defined $type;
-    my $name     = shift; die unless defined $name;
-    my $lcup     = shift; die unless defined $lcup;
-    my $lcdn     = shift; die unless defined $lcdn;
-    my $dur      = shift; die unless defined $dur;
-    my $puls     = shift; die unless defined $puls;
-    my $thresh   = shift; die unless defined $thresh;
-    my $pulsrate = shift; # Leave undefined to accept default
-    my $compMode = shift; # ""
-    my $dataFmt  = shift; # ""
+    my %args     = @_;
+    my $dom      = $args{DOM};         die unless defined $dom;
+    my $type     = $args{Trig};        die unless defined $type;
+    my $name     = $args{Name};        die unless defined $name;
+    my $lcup     = $args{LcUp};        die unless defined $lcup;
+    my $lcdn     = $args{LcDn};        die unless defined $lcdn;
+    my $dur      = $args{Duration};    die unless defined $dur;
+    my $puls     = $args{DoPulser};    die unless defined $puls;
+    my $thresh   = $args{Threshold};   die unless defined $thresh;
+    my $pulsrate = $args{PulserRate};  # Leave undefined to accept default
+    my $compMode = $args{Compression}; # ""
+    my $dataFmt  = $args{Format};      # ""
 
     printc "Collecting $name (trigger type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
@@ -642,9 +736,13 @@ sub doShortHitCollection {
     for(split '\n', $moni) {
 	printWarning($_, $monFile) if hadWarning($_);
     }
+
+    # Check for trigger rate consistency
     if($dataFmt == 0 && defined $pulsrate) {
-	my $nforced   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "CPU Trigger" | wc -l`;
-	if($nforced =~ /^\s+(\d+)$/ && $1 > 0) {
+	# Look for discriminator trigger if running in pulser mode:
+	my $desiredType = $puls ? "Discriminator Trigger" : "CPU Trigger";
+	my $nhits   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
+	if($nhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	    my $nhits = $1;
 	    my $ratestr;
             my $evrate = $nhits/$dur;
@@ -652,11 +750,34 @@ sub doShortHitCollection {
 		$lasterr = "Measured forced trigger rate ($evrate Hz) doesn't match requested rate ($pulsrate Hz).\n";
 		return 0;
 	    } else {
-		printf "(heartbeat rate %2.2f Hz) ", $evrate;
+		printf "($desiredType rate %2.2f Hz) ", $evrate;
 	    }
 	} else {
 	    $lasterr = "Didn't get any forced trigger data - check $engFile.\n".
 		"Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
+	    return 0;
+	}
+    }
+    # Check for SPE rate consistency if rate is defined and pulser in use:
+    if($dataFmt == 0 && defined $pulsrate && $puls) {
+	my @moni    = `decodemoni -v $monFile | grep HW`;
+	my $spesum = 0;
+	my $nspe   = 0;
+	for(@moni) {
+	    my $spe = (split '\s+')[32];
+	    # print "Monitoring string $_ -> $spe\n";
+	    $nspe++;
+	    $spesum += $spe;
+	}
+	if($nspe == 0) {
+	    $lasterr = "No HW monitoring records in $monFile... check $monFile.\n"
+		.       "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
+	    return 0;
+	}
+	my $speAvg = $spesum / $nspe;
+	if($speAvg < $pulsrate/2.5 || $speAvg > $pulsrate*2.5) {
+	    $lasterr = "Measured SPE discriminator rate ($speAvg Hz) doesn't match requested rate ($pulsrate Hz).\n"
+		.      "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
 	    return 0;
 	}
     }

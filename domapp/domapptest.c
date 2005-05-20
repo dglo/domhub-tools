@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.9 2005-05-19 00:07:57 jacobsen Exp $
+   $Id: domapptest.c,v 1.13 2005-05-20 21:09:30 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -63,8 +63,8 @@ int usage(void) {
 	  "    -W <wch0>,<wch1>,<wch2>,<wch3>: Sample width (1 or 2 bytes), each chan.\n"
 	  "    -F <num>: Read out <num> (0..255) ATWD samples\n"
 	  "    -B: Initialize hit buffering\n"
-	  "    -I <mode>,<up-pre>,<up-post>,<dn-pre>,<dn-pos>: Require local coincidence,\n"
-	  "       with the four time windows given in nsec.\n"
+	  "    -I <mode>,<pre>,post>: Require local coincidence,\n"
+	  "       with the two time windows given in nsec.\n"
 	  "       Mode=1 (upper and lower enabled) 2 (upper only) 3 (lower only)\n"
 	  "    -R <a0>,<a1>,<a2>,<a3>,<f> Set road-grader thresholds for both ATWDs and FADC\n"
 	  "    -p: Run pulser to generate SPE triggers in absence of real PMT\n"
@@ -84,7 +84,8 @@ int usage(void) {
 #define MAXIDLE             500
 #define READCYCLE            10
 #define DO_TEST_INJECT        0 /* Set to true if you want to inject test data */
-#define MAXLCWIN           3100
+#define MINLCWIN            100
+#define MAXLCWIN           6200
 #define MAXDACS              50
 #define MAXFILENAME         512
 #define ATWDCHSIZ           128
@@ -103,8 +104,7 @@ int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
 int beginRun(int filep, int bufsiz, int dopulser);
 int endRun(int filep, int bufsiz, int dopulser);
-int setUpLC(int filep, int bufsiz, int mode, int up_pre_ns, 
-	    int up_post_ns, int dn_pre_ns, int dn_post_ns);
+int setUpLC(int filep, int bufsiz, int mode, int pre_ns, int post_ns);
 int clearLC(int filep, int bufsiz);
 int turnOffLC(int filep, int bufsiz);
 int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
   unsigned short dacs[MAXDACS],dacvals[MAXDACS];
   int dac,val,ndacs=0;
   int lcmode;
-  int dolc=0, up_pre_ns, up_post_ns, dn_pre_ns, dn_post_ns;
+  int dolc=0, pre_ns, post_ns;
   unsigned long long dtrwmin = 0, dtrwmax = 0;
   int doFmt = 0, fmtMode = 0;
   int doComp = 0, compMode = 0;
@@ -213,9 +213,8 @@ int main(int argc, char *argv[]) {
     case 'H': hfreq = atoi(optarg); dopoll = 1; break;
     case 'p': dopulser = 1; break;
     case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
-    case 'I': if(sscanf(optarg, "%d,%d,%d,%d,%d", &lcmode,
-			&up_pre_ns, &up_post_ns, &dn_pre_ns,
-			&dn_post_ns)!=5) exit(usage());
+    case 'I': if(sscanf(optarg, "%d,%d,%d", &lcmode,
+			&pre_ns, &post_ns)!=3) exit(usage());
       dolc = 1;
       break;
      case 'R': if(sscanf(optarg, "%hu,%hu,%hu,%hu,%hu", 
@@ -268,13 +267,10 @@ int main(int argc, char *argv[]) {
   }
 
   /* Validate LC arguments */
-  if(dolc && ((up_pre_ns  < 0 || up_pre_ns  > MAXLCWIN) ||
-	      (up_post_ns < 0 || up_post_ns > MAXLCWIN) ||
-	      (dn_pre_ns  < 0 || dn_pre_ns  > MAXLCWIN) ||
-	      (dn_post_ns < 0 || dn_post_ns > MAXLCWIN) ||
+  if(dolc && ((pre_ns  < MINLCWIN || post_ns  > MAXLCWIN) ||
 	      (lcmode < 1 || lcmode > 3))) {
-    fprintf(stderr,"Error: LC windows must be between 0 and %d,\n"
-	   "mode between 1 and 3.\n", MAXLCWIN);
+    fprintf(stderr,"Error: LC windows must be between %d and %d,\n"
+	   "mode between 1 and 3.\n", MINLCWIN, MAXLCWIN);
     exit(-1);
   }
 
@@ -509,14 +505,15 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"OK.\n");
   }
 
+  int hvon = 0;
   if(dohv) {
     if(setHighVoltage(filep, bufsiz, hvdac)) exit(-1);
+    hvon = 1;
   }
 
   /* Set up local coincidence event selection for buffering */
   if(dolc) {
-    if(setUpLC(filep, bufsiz, lcmode, up_pre_ns, up_post_ns, 
-		     dn_pre_ns, dn_post_ns)) {
+    if(setUpLC(filep, bufsiz, lcmode, pre_ns, post_ns)) {
       fprintf(stderr,"Domapp local coincidence initialization failed.\n");
       exit(-1);
     }
@@ -694,8 +691,14 @@ int main(int argc, char *argv[]) {
 	  }
 	  done = 1;
 	}
+	/* Turn off HV when duration is up so we can see it in 
+	   monitoring stream */
+	if(dtsec >= secDuration && dohv && hvon) {
+	  hvon = 0;
+	  highVoltageOff(filep, bufsiz); /* We'll do again @ end of loop to be sure */
+	}
 
-	/* Add 1 to run length after run stop to get last monitoring, etc. events */
+	/* Add 1 sec to run length after run stop to get last monitoring, etc. events */
 	if(dtsec >= secDuration+1) {
 	  fprintf(stderr,"Done (%lld usec).\n",dt);
 	  break;
@@ -869,6 +872,12 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
 int endRun(int filep, int bufsiz, int dopulser) {
   int r;
 
+  if((r=domsg(filep, bufsiz, 1000,
+              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
+    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
+    return 1;
+  }
+
   if(dopulser) {
     fprintf(stderr,"Turning off front-end pulser... \n");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
@@ -876,12 +885,6 @@ int endRun(int filep, int bufsiz, int dopulser) {
       exit(-1);
     }
     fprintf(stderr,"OK.\n");
-  }
-
-  if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
-    fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
-    return 1;
   }
 
   return 0;
@@ -898,12 +901,11 @@ int clearLC(int filep, int bufsiz) {
 }
 
 int setUpLC(int filep, int bufsiz, int mode,
-	    int up_pre_ns, int up_post_ns, 
-	    int dn_pre_ns, int dn_post_ns) {
+	    int pre_ns, int post_ns) {
   int r;
   if((r=domsg(filep, bufsiz, 1000,
-              DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_WINDOW, "-LLLL", 
-	      up_pre_ns, up_post_ns, dn_pre_ns, dn_post_ns)) != 0) {
+              DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_WINDOW, "-LL", 
+	      pre_ns, post_ns)) != 0) {
     fprintf(stderr,"DSC_SET_LOCAL_COIN_WINDOW failed: %d\n", r);
     return 1;
   }
@@ -1122,7 +1124,7 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
   int r;
 #define MAXHV      2048 /* VOLTS */
 #define MAXHVDELTA 50   /* Volts */
-#define MAXTRIALS  100  
+#define MAXTRIALS  15
 #define SLEEPMS    300 
   if(hvdac > 2*MAXHV) {
     fprintf(stderr,"setHighVoltage: voltage too high (%d V, %d is maximum)!\n",
