@@ -397,7 +397,7 @@ sub LCMoniTest {
     my $win0 = 100;
     my $win1 = 200;
     foreach my $mode(1..3) {
-	my $moniFile = "lc_state_chg_mode$mode"."$dom.moni";
+	my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
 	printc "Mode $mode: ";
 	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
 	my $result = docmd $cmd;
