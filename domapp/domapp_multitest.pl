@@ -140,6 +140,7 @@ sub testDOM {
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 if $dohv && !setHVTest($dom);
+    return 0 unless LCMoniTest($dom);
     return 0 unless collectDiscTrigDataCompressedForced($dom);
     return 0 unless collectDiscTrigDataCompressedPulser($dom);
     return 0 unless shortEchoTest($dom);
@@ -150,7 +151,6 @@ sub testDOM {
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
-    return 0 unless LCMoniTest($dom);
 
     if(defined $doflasher) {
 	return 0 unless flasherVersionTest($dom);
@@ -394,14 +394,12 @@ sub shortEchoTest {
 sub LCMoniTest {
     my $dom = shift;
     printc "Testing monitoring reporting of LC state changes...\n";
-    my $moniFile = "lc_state_chg_$dom.moni";
     my $win0 = 100;
     my $win1 = 200;
-    my $win2 = 300;
-    my $win3 = 400;
     foreach my $mode(1..3) {
+	my $moniFile = "lc_state_chg_mode$mode"."$dom.moni";
 	printc "Mode $mode: ";
-	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1,$win2,$win3 $dom 2>&1";
+	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
 	my $result = docmd $cmd;
 	if($result !~ /Done \((\d+) usec\)\./) {
 	    $lasterr = "Test of monitoring of LC state changes failed:\n".
@@ -421,12 +419,12 @@ sub LCMoniTest {
 		return 0;
 	    }
 	    printWarning($_, $moniFile) if hadWarning $_;
-# STATE CHANGE: LC WIN <- (100, 100, 100, 100)
+# STATE CHANGE: LC WIN <- (100, 100)
 	    if(/LC WIN <- \((\d+), (\d+)\)/) {
-		if($1 ne $win0 || $2 ne $win1 || $3 ne $win2 || $4 ne $win3) {
+		if($1 ne $win0 || $2 ne $win1) {
 		    $lasterr =
-			"Window mismatch ($1 vs $win0, $2 vs $win1, $3 vs $win2, $4 vs $win3\n"
-			."Line: $_\nFile: $moniFile";
+			"Window mismatch ($1 vs $win0, $2 vs $win1\n"
+			."Line: $_\nFile: $moniFile\n";
 		    return 0;
 		} else {
 		    $gotwin = 1;
