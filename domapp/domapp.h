@@ -98,6 +98,16 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DSC_GET_LOCAL_COIN_MODE 46
 #define DSC_SET_LOCAL_COIN_WINDOW 47
 #define DSC_GET_LOCAL_COIN_WINDOW 48
+#define DSC_SET_LC_TYPE 49
+#define DSC_GET_LC_TYPE 50
+#define DSC_SET_LC_TX 51
+#define DSC_GET_LC_TX 52
+#define DSC_SET_LC_SRC 53
+#define DSC_GET_LC_SRC 54
+#define DSC_SET_LC_SPAN 55
+#define DSC_GET_LC_SPAN 56
+#define DSC_SET_LC_CABLE_LEN 57
+#define DSC_GET_LC_CABLE_LEN 58
 #define EXPCONTROL_BEGIN_RUN 12
 #define EXPCONTROL_END_RUN 13
 #define EXPCONTROL_DO_PEDESTAL_COLLECTION 16
@@ -524,7 +534,7 @@ int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout) {
   /* Get first reply */
   int i, len;
   for(i=0; !timeout || i<timeout; i++) {
-    len = getMsg(filep, r, bufsiz, 100);
+    len = getMsg(filep, r, bufsiz, 1000);
     if(len == -1) { // EAGAIN
       usleep(1000);
     } else if(len < MSG_HDR_LEN) {
@@ -629,7 +639,7 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
   }
   zeroMsg(reply);
   int sar;
-  if((sar=sendAndReceive(filep, bufsiz, m, reply, 100)) != 0) {
+  if((sar=sendAndReceive(filep, bufsiz, m, reply, timeout)) != 0) {
     fprintf(stderr,"sendAndReceive failed(%d)!\n", sar);
     free(reply);
     free(m);

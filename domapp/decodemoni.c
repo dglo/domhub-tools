@@ -1,7 +1,7 @@
 /* decodemoni.c : C program to decode/test monitoring data from DOM
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started May, 2004
-   $Id: decodemoni.c,v 1.2 2005-05-19 20:10:16 jacobsen Exp $
+   $Id: decodemoni.c,v 1.3 2005-05-20 21:09:30 jacobsen Exp $
 
    Decode monitor data to make sure it makes sense
 */
@@ -405,12 +405,10 @@ int main(int argc, char *argv[]) {
 	  break;
 	case DSC_SET_LOCAL_COIN_WINDOW:
 	  { 
-	    unsigned long up_pre  = unpackLong(mbuf+2);
-	    unsigned long up_post = unpackLong(mbuf+6);
-            unsigned long dn_pre  = unpackLong(mbuf+10);
-            unsigned long dn_post = unpackLong(mbuf+14);
-	    printf("\tSTATE CHANGE: LC WIN <- (%lu, %lu, %lu, %lu)\n",
-		   up_pre, up_post, dn_pre, dn_post);
+	    unsigned long pre  = unpackLong(mbuf+2);
+	    unsigned long post = unpackLong(mbuf+6);
+	    printf("\tSTATE CHANGE: LC WIN <- (%lu, %lu)\n",
+		   pre, post);
 	  }
 	  break;
 	case DSC_ENABLE_PMT_HV:

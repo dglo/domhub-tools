@@ -140,13 +140,14 @@ sub testDOM {
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 if $dohv && !setHVTest($dom);
+    return 0 unless collectDiscTrigDataCompressedForced($dom);
+    return 0 unless collectDiscTrigDataCompressedPulser($dom);
     return 0 unless shortEchoTest($dom);
     return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
     return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
-    print "SKIPPING collectDiscTrigDataCompressed\n"; # return 0 unless collectDiscTrigDataCompressed($dom);
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
     return 0 unless LCMoniTest($dom);
@@ -241,15 +242,30 @@ sub varyHeartbeatRateTestNoLC {
     return 1;
 }
 
-sub collectDiscTrigDataCompressed {
+sub collectDiscTrigDataCompressedForced {
     my $dom = shift; die unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
-				Name        => "discTrigCompr",
+				Name        => "comprForced",
 				LcUp        => 0,
 				LcDn        => 0,
 				Duration    => 4,
 				DoPulser    => 0,
+				Threshold   => $speThresh,
+				PulserRate  => 2000,
+				Compression => CMP_RG,
+				Format      => FMT_RG);
+}
+
+sub collectDiscTrigDataCompressedPulser {
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+				Trig        => DISCTRIG,
+				Name        => "comprPulsr",
+				LcUp        => 0,
+				LcDn        => 0,
+				Duration    => 4,
+				DoPulser    => 1,
 				Threshold   => $speThresh,
 				PulserRate  => 2000,
 				Compression => CMP_RG,
@@ -406,10 +422,11 @@ sub LCMoniTest {
 	    }
 	    printWarning($_, $moniFile) if hadWarning $_;
 # STATE CHANGE: LC WIN <- (100, 100, 100, 100)
-	    if(/LC WIN <- \((\d+), (\d+), (\d+), (\d+)\)/) {
+	    if(/LC WIN <- \((\d+), (\d+)\)/) {
 		if($1 ne $win0 || $2 ne $win1 || $3 ne $win2 || $4 ne $win3) {
 		    $lasterr =
-			"Window mismatch ($1 vs $win0, $2 vs $win1, $3 vs $win2, $4 vs $win3\n";
+			"Window mismatch ($1 vs $win0, $2 vs $win1, $3 vs $win2, $4 vs $win3\n"
+			."Line: $_\nFile: $moniFile";
 		    return 0;
 		} else {
 		    $gotwin = 1;
