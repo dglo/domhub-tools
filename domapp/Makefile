@@ -1,11 +1,12 @@
 # Makefile for domhub-tools/domapp
 # Jacobsen
-# $Id: Makefile,v 1.9 2005-05-20 02:47:19 jacobsen Exp $
+# $Id: Makefile,v 1.10 2005-05-25 05:35:38 jacobsen Exp $
 
 INSTALL_BIN = /usr/local/bin
 
+BINS = domapptest decomp decodemoni decodeeng decodesn
 all:
-	make domapptest decomp decodemoni decodeeng
+	make $(BINS)
 
 decodemoni: decodemoni.c domapp.h
 	gcc -Wall -o decodemoni decodemoni.c
@@ -19,8 +20,11 @@ domapptest: domapptest.c domapp.h
 decomp: decomp.c
 	gcc -Wall -o decomp decomp.c
 
+decodesn: decodesn.c
+	gcc -Wall -o decodesn decodesn.c
+
 clean:
-	rm -f domapptest
+	rm -f $(BINS)
 
 install:
 	install domapp_multitest.pl $(INSTALL_BIN)
@@ -29,3 +33,4 @@ install:
 	install decomp              $(INSTALL_BIN)
 	install decodemoni          $(INSTALL_BIN)
 	install decodeeng           $(INSTALL_BIN)
+	install decodesn            $(INSTALL_BIN)
