@@ -839,10 +839,10 @@ sub doShortHitCollection {
 	    $lasterr = "$summary\n\nSupernova data file $snFile had no timeslice data!\n";
 	    return 0;
 	}
-    }
-    if($SNcountsTotal < 1) {
-	$lasterr = "$summary\n\nSupernova data file $snFile had no hits!\n";
-	return 0;
+	if($SNcountsTotal < 1) {
+	    $lasterr = "$summary\n\nSupernova data file $snFile had no hits!\n";
+	    return 0;
+	}
     }
     my $SNsummary = (defined $SNDeadT) ? ", $SNbins SN timeslices, $SNcountsTotal SN counts" : "";
     if($nhitsline =~ /^\s+(\d+)$/ && $1 > 0) {
