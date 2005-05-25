@@ -16,7 +16,7 @@ my $failstart = "\n\nFAILURE ------------------------------------------------\n"
 my $failend   =     "--------------------------------------------------------\n";
 my $lasterr;
 my $O            = filly $0;
-my $msgcols      = 52;
+my $msgcols      = 50;
 my $speThreshDAC = 9;
 my $speThresh    = 600;
 my $pulserDAC    = 11;
@@ -123,6 +123,8 @@ print "\n$O: SUCCESS at '".(scalar localtime)."'\n";
 
 exit;
 
+sub SKIP { printc "SKIPPING $_[0]... OK.\n"; return 1; }
+
 sub testDOM {
 # Upload DOM software and test.  Return 1 if success, else 0.
     my $dom = shift;
@@ -136,27 +138,26 @@ sub testDOM {
 	return 0 unless domappmode($dom);
     }
 
+
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
-    return 0 if $dohv && !setHVTest($dom);
-    return 0 unless SNTest($dom);
+
+    return 0 if $doflasher && !flasherVersionTest($dom);
+    return 0 if $dohv      && !setHVTest($dom);
     return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
-    return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
     return 0 unless collectCPUTrigDataTestNoLC($dom);
+    return 0 unless collectDiscTrigDataCompressedForced($dom);
+    return 0 unless collectDiscTrigDataCompressedPulser($dom);
+    return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
+    return 0 unless SNTest($dom);
     return 0 unless LCMoniTest($dom);
     return 0 unless shortEchoTest($dom);
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
-    return 0 unless collectDiscTrigDataCompressedForced($dom);    
-    return 0 unless collectDiscTrigDataCompressedPulser($dom);
-
-    if(defined $doflasher) {
-	return 0 unless flasherVersionTest($dom);
-	return 0 unless flasherTest($dom);
-    }
+    return 0 if $doflasher && !flasherTest($dom);
 
 #    if(defined $dohv) {
 #	return 0 unless collectDiscTrigDataTestNoLCWithHV($dom);
@@ -186,7 +187,7 @@ sub SNTest {
                                 Name        => "SNTrigger",
                                 DoPulser    => 1,
 				Threshold   => $speThresh,
-                                PulserRate  => 1000,
+                                PulserRate  => 500,
                                 Compression => CMP_NONE,
                                 Format      => FMT_ENG,
                                 SNDeadTime  => 6400,
@@ -390,7 +391,7 @@ sub shortEchoTest {
 
 sub LCMoniTest {
     my $dom = shift;
-    printc "Testing monitoring reporting of LC state changes...\n";
+    printc "Testing moni. reporting of LC state chgs...\n";
     my $win0 = 100;
     my $win1 = 200;
     foreach my $mode(1..3) {
@@ -683,13 +684,18 @@ sub doShortHitCollection {
     my $dur      = $args{Duration};    $dur  = 4 unless defined $dur;
     my $puls     = $args{DoPulser};    die unless defined $puls;
     my $thresh   = $args{Threshold};   die unless defined $thresh;
+    my $dofb     = $args{DoFlasher};   $dofb   = 0  unless defined $dofb;
+    my $bright   = $args{FBBright};    $bright = 1  unless defined $bright;
+    my $win      = $args{FBWin};       $win    = 10 unless defined $win;
+    my $delay    = $args{FBDelay};     $delay  = 0  unless defined $delay;
+    my $mask     = $args{FBMask};      $mask   = 1  unless defined $mask;
     my $pulsrate = $args{PulserRate};  # Leave undefined to accept default
     my $compMode = $args{Compression}; # ""
     my $dataFmt  = $args{Format};      # ""
     my $SNDeadT  = $args{SNDeadTime};  # ""
     my $skipRateChk = $args{skipRateChk};
 
-    printc "Collecting $name (trigger type $type) data... ";
+    printc "Collecting $name (trig. type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
     my $monFile = "short_$name"."_$dom.moni";
     my $snFile  = "short_$name"."_$dom.sn"; # Only used if SNDeadT given
@@ -705,7 +711,6 @@ sub doShortHitCollection {
     }
     my $lcstr       = $mode ? "-I $mode,100,100,100,100" : "";
     my $pulserArg   = $puls ? "-p -S$pulserDAC,$pulserAmp" : "";
-    my $pulsrateArg = (defined $pulsrate) ? "-P $pulsrate" : "";
     my $fmtArg      = (defined $dataFmt) ? "-X $dataFmt" : "";
     my $compArg     = (defined $compMode) ? "-Z $compMode" : "";
     my $threshArg   = "";
@@ -713,9 +718,22 @@ sub doShortHitCollection {
     if(defined $compMode && $compMode == CMP_RG) {
 	$threshArg = "-R 100,100,100,100,100";
     }
+    my ($pulsrateArg, $runArg);
+    if($dofb) {
+	$runArg = "-u $bright,$win,$delay,$mask,$pulsrate";
+	$pulsrateArg = ""; 
+# FIXME: check dacs!
+#    my $cmd = "$dat -S0,850 -S1,2300 -S2,350 -S3,2250 -S7,2130 -S14,450"
+#	." -H1 -M1 -m $moni -i $hits -d 5 $dom -B $bright,$win,$delay,$mask,$rate"
+#	." 2>&1";
+
+    } else {
+	$runArg = "-B";
+	$pulsrateArg = (defined $pulsrate) ? "-P $pulsrate" : "";
+    }
     my $cmd       = "$dat -d $dur $defaultDACS -S$speThreshDAC,$thresh "
 	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg $snArg "
-	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
+	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type $runArg -i $engFile $lcstr $dom 2>&1";
 
     my $result    = docmd $cmd;
     my $moni      = `decodemoni -v $monFile`; chomp $moni;
@@ -763,7 +781,8 @@ sub doShortHitCollection {
 		$lasterr = "Measured forced trigger rate ($evrate Hz) doesn't match requested rate ($pulsrate Hz).\n";
 		return 0;
 	    } else {
-		printf "($desiredType rate %2.2f Hz) ", $evrate;
+		$desiredType =~ m/(\S*)/;
+		printf "($1 trig. rate %2.1f Hz) ", $evrate;
 	    }
 	} else {
 	    $lasterr = "Didn't get any forced trigger data - check $engFile.\n".
@@ -788,7 +807,7 @@ sub doShortHitCollection {
 	    return 0;
 	}
 	my $speAvg = $spesum / $nspe;
-	if($speAvg < $pulsrate/2.5 || $speAvg > $pulsrate*2.5) {
+	if(!$skipRateChk && $speAvg < $pulsrate/2.5 || $speAvg > $pulsrate*2.5) {
 	    $lasterr = "Measured SPE discriminator rate ($speAvg Hz) doesn't match requested rate ($pulsrate Hz).\n"
 		.      "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
 	    return 0;
@@ -817,9 +836,13 @@ sub doShortHitCollection {
 	    }
 	}
 	if($SNbins == 0) {
-	    $lasterr .= "$summary\n\nSupernova data file $snFile had no timeslice data!\n";
+	    $lasterr = "$summary\n\nSupernova data file $snFile had no timeslice data!\n";
 	    return 0;
 	}
+    }
+    if($SNcountsTotal < 1) {
+	$lasterr = "$summary\n\nSupernova data file $snFile had no hits!\n";
+	return 0;
     }
     my $SNsummary = (defined $SNDeadT) ? ", $SNbins SN timeslices, $SNcountsTotal SN counts" : "";
     if($nhitsline =~ /^\s+(\d+)$/ && $1 > 0) {
@@ -845,6 +868,7 @@ sub doShortHitCollection {
 
 sub flasherVersionTest {
     my $dom  = shift;
+    printc "Fetching flasher board ID... ";
     my $cmd = "$dat -z $dom 2>&1";
     my $result = docmd $cmd;
     if($result =~ /Flasher board ID is \'(.*?)\'/) {
@@ -855,28 +879,31 @@ sub flasherVersionTest {
 	    $lasterr = "Got flasher board ID $1.\n";
 	}
     } else {
-	$lasterr = "Version string request: didn't get ID (wrong domapp version?)\n".
-	    "Session:\n$result\n";
+	$lasterr = "Version string request: didn't get ID "
+	    .      "(wrong domapp version?  No flasher board attached?)\n"
+	    .      "Session:\n$result\n";
 	return 0;
     }
+    print "OK.\n";
     return 1;
 }
 
 sub flasherTest { 
-    my $dom  = shift;
-    my $moni = "flasher_$dom.moni";
-    my $hits = "flasher_$dom.hits";
-    my $bright = 1;
-    my $win    = 10;
-    my $delay  = 0;
-    my $mask   = 1;
-    my $rate   = 1;
-    my $cmd = "$dat -S0,850 -S1,2300 -S2,350 -S3,2250 -S7,2130 -S14,450"
-	." -H1 -M1 -m $moni -i $hits -d 5 -B $dom -Z $bright,$win,$delay,$mask,$rate"
-	." 2>&1";
-    my $result = docmd $cmd;
-    print "Result:\n$result";
-    return 1;
+    my $dom  = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => CPUTRIG,
+                                Name        => "Flasher",
+                                DoPulser    => 0,
+                                Threshold   => 0,
+				DoFlasher   => 1,
+				PulserRate  => 100,
+				FBBright    => 1,
+				FBWin       => 10,
+				FBDelay     => 0,
+				FBMask      => 1,
+				Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                skipRateChk => 1);
 }
 
 sub filly { my $pat = shift; my @l = split '/', $pat; return $l[-1]; }
