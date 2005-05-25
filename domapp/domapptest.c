@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.14 2005-05-25 05:38:02 jacobsen Exp $
+   $Id: domapptest.c,v 1.15 2005-05-26 03:42:30 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -52,6 +52,7 @@ int usage(void) {
 	  "    -f <sec>: Tell domapp to generate config moni recs every <sec> seconds\n"
 	  "    -m <file>: Write monitoring data to <file>\n"
 	  "  Hit data:\n"
+	  "    -B Initiate triggering/data taking (do not use w/ -u option)\n"
 	  "    -i <file>: Write hit data to <file>\n"
 	  "    -T <trigmode>:\n"
 	  "       Set trigger mode to <trigmode> (0=testpat 1=cpu 2=disc)\n"
@@ -62,7 +63,6 @@ int usage(void) {
 	  "                                    for each ATWD channel\n"
 	  "    -W <wch0>,<wch1>,<wch2>,<wch3>: Sample width (1 or 2 bytes), each chan.\n"
 	  "    -F <num>: Read out <num> (0..255) ATWD samples\n"
-	  "    -B: Initialize hit buffering\n"
 	  "    -I <mode>,<pre>,post>: Require local coincidence,\n"
 	  "       with the two time windows given in nsec.\n"
 	  "       Mode=1 (upper and lower enabled) 2 (upper only) 3 (lower only)\n"
@@ -73,7 +73,10 @@ int usage(void) {
 	  "    -K <file>,<freq>,<mode>,<deadtime>: collect supernova data in file <file>; \n"
 	  "       frequency is relative to hit, moni etc. messages.  \n"
 	  "       Mode 0=spe, 1=mpe; deadtime in [6400, 512000].\n"
-	  "  If no message types are given, echo test will be used.\n"
+	  "  Flasher board interface:\n"
+	  "    -z Fetch flasher board ID\n"
+	  "    -u <bright>,<win>,<delay>,<mask>,<rate>: Flasher board run.  Do not use\n"
+	  "       with -B option.\n"
 	  "  Roll-your-own Custom Messages:\n"
 	  "    -C <type>,<subtype> E.g., -C 4,12 gives EXPCONTROL_BEGIN_RUN message.\n"
 	  );
@@ -106,13 +109,15 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq);
 int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
 int beginRun(int filep, int bufsiz, int dopulser);
+int beginFBRun(int filep, int bufsiz, unsigned short bright,
+               unsigned short win, short delay, unsigned short mask, unsigned short rate);
 int endRun(int filep, int bufsiz, int dopulser);
 int setUpLC(int filep, int bufsiz, int mode, int pre_ns, int post_ns);
 int clearLC(int filep, int bufsiz);
 int turnOffLC(int filep, int bufsiz);
 int setUpSN(int filep, int bufsiz, int snmode, int sndeadt);
 int turnOffSN(int filep, int bufsiz);
-
+int testPedestalCollection(int filep, int bufsiz);
 int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
 			   unsigned short atwdthresh[], 
 			   unsigned short fadc_thresh);
@@ -198,15 +203,20 @@ int main(int argc, char *argv[]) {
   unsigned short dacs[MAXDACS],dacvals[MAXDACS];
   int dac,val,ndacs=0;
   int lcmode;
-  int dolc=0, pre_ns, post_ns;
+  int dofbid = 0;
+  int dofbrun = 0;
+  unsigned short bright, win, mask, rate;
+  short delay;
+  int dolc = 0, pre_ns, post_ns;
   unsigned long long dtrwmin = 0, dtrwmax = 0;
   int doFmt = 0, fmtMode = 0;
   int doComp = 0, compMode = 0;
   int dosn = 0, snmode, sndeadt, sfreq=0;
+
   while(1) {
     char c = getopt(argc, argv, 
-		    "QVvhcBOspi:d:E:M:H:D:m:w:f:T:N:"
-		    "W:F:C:R:A:S:L:I:P:Z:X:K:");
+		    "QVvhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
+		    "W:F:C:R:A:S:L:I:P:Z:X:K:u:");
     if (c == -1) break;
 
     switch(c) {
@@ -214,15 +224,20 @@ int main(int argc, char *argv[]) {
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
     case 's': stuffit = 1; break;
-    case 'B': dohitbuf = 1; break;
+    case 'z': dofbid = 1; break;
     case 'X': doFmt = 1; fmtMode = atoi(optarg); break;
     case 'Z': doComp = 1; compMode = atoi(optarg); break;
     case 'A': whichATWD = atoi(optarg); defineATWD = 0; break;
     case 'E': efreq = atoi(optarg); dopoll = 1; break;
     case 'M': mfreq = atoi(optarg); dopoll = 1; break;
     case 'H': hfreq = atoi(optarg); dopoll = 1; break;
+    case 'B': dohitbuf = 1; break;
     case 'p': dopulser = 1; break;
     case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
+    case 'u':
+      if(sscanf(optarg, "%hu,%hu,%hd,%hu,%hu", &bright,&win,&delay,&mask,&rate)!=5) exit(usage());
+      dofbrun = 1;
+      break;
     case 'K': 
       if(sscanf(optarg, "%d,%d,%d,%s", 
 		&sfreq, &snmode, &sndeadt, snfile)!=4) exit(usage());
@@ -265,8 +280,14 @@ int main(int argc, char *argv[]) {
       if(sscanf(optarg, "%d", &nadc) != 1) exit(usage()); 
       defineEngrFmt = 1;
       break;
-    case 'm': strncpy(monifile, optarg, MAXFILENAME); savemoni = 1; break;
-    case 'i': strncpy(hitsfile, optarg, MAXFILENAME); savehits = 1; break;
+    case 'm': 
+      if(sscanf(optarg,"%s",monifile)!=1) exit(usage());
+      savemoni = 1; 
+      break;
+    case 'i': 
+      if(sscanf(optarg,"%s",hitsfile)!=1) exit(usage());
+      savehits = 1; 
+      break;
     case 'w': hwival = atoi(optarg); break;
     case 'f': cfival = atoi(optarg); break;
     case 'L': dohv = 1; hvdac = atoi(optarg)*2; break;
@@ -416,6 +437,17 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"DOM ID is '%s'\n", ID);
   }
 
+  if(dofbid) {
+    char fbid[MAX_DATA_LEN];
+    if((r=domsg(filep, bufsiz, 1000,
+                DATA_ACCESS, DATA_ACC_GET_FB_SERIAL,
+                "+X", fbid)) != 0) {
+      fprintf(stderr,"DATA_ACC_GET_FB_SERIAL failed: %d\n", r);
+      exit(-1);
+    }
+    fprintf(stderr,"Flasher board ID is '%s'\n", fbid);
+  }
+
   if(askversion) {
     char version[MAX_DATA_LEN];
     if((r=domsg(filep, bufsiz, 1000, 
@@ -501,6 +533,7 @@ int main(int argc, char *argv[]) {
 
   if(doComp) {
     if(compMode == 1) {
+      //if(testPedestalCollection(filep, bufsiz)) exit(-1);
       if(setUpPedsAndThresholds(filep, bufsiz, setthresh, 
 				atwd_thresh, fadc_thresh)) exit(-1);
     }
@@ -546,6 +579,23 @@ int main(int argc, char *argv[]) {
     clearLC(filep, bufsiz);
   }
 
+  if(dohitbuf && dofbrun) {
+    fprintf(stderr, "Flasher run is incompatible with normal run modes! (-B)\n");
+    exit(-1);
+  }
+
+  /* Start data taking ... */
+  if(dohitbuf && beginRun(filep, bufsiz, dopulser)) {
+    fprintf(stderr,"Run start failed.\n");
+    exit(-1);
+  }
+
+  /* ... or do flasher run... */
+  if(dofbrun && beginFBRun(filep, bufsiz, bright, win, delay, mask, rate)) {
+    fprintf(stderr,"Flasher run start failed.\n");
+    exit(-1);
+  }
+
   /* Set up supernova system, if desired */
   int snfd;
   if(dosn) {
@@ -560,12 +610,6 @@ int main(int argc, char *argv[]) {
       exit(-1);
     }
   }
-  
-  /* Start data taking */
-  if(dohitbuf && beginRun(filep, bufsiz, dopulser)) {
-      fprintf(stderr,"Domapp buffering initialization failed.\n");
-      exit(-1);
-  }
 
   /* keep gettimeofday near beginRun to time run correctly */
   struct timeval tstart; 
@@ -574,6 +618,7 @@ int main(int argc, char *argv[]) {
 
   struct timeval lastTWrite, lastTRead;
 
+  fprintf(stderr,"Entering periodic data collection loop...\n");
   /* Messaging loop */
   int idle = 0;
   int icyc = 0;
@@ -600,7 +645,7 @@ int main(int argc, char *argv[]) {
 	case ECHO: 
 	default: sendType = ECHO; msgToSend = echoMsg; break;
 	}
-	
+	//fprintf(stderr,"sending type %d...\n",sendType);
 	/* Write the message */
 	int len = sendMsg(filep, msgToSend);
 	inflight++;
@@ -631,6 +676,7 @@ int main(int argc, char *argv[]) {
 	  fprintf(stderr,"getMsg gave %d -- quitting.\n", len);
 	  exit(-1);
 	} else {
+	  //fprintf(stderr,"got subtype %d...\n",msgSubType(msgReply));
 	  gotread = 1;
 	  gettimeofday(&lastTRead, NULL);
 	  unsigned long long dtrw = (lastTRead.tv_sec - lastTWrite.tv_sec)*1000000 + 
@@ -1009,9 +1055,21 @@ int turnOffLC(int filep, int bufsiz) {
      return 1;
    }
    return 0;
- }
+}
 
-
+int beginFBRun(int filep, int bufsiz, unsigned short bright,
+	       unsigned short win, short delay, unsigned short mask, unsigned short rate) {
+  int r;
+  fprintf(stderr,"Starting flasher run... ");
+  if((r=domsg(filep, bufsiz, 1000,
+              EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_FB_RUN, "-SSSSS",
+	      bright, win, delay, mask, rate)) != 0) {
+    fprintf(stderr,"EXPCONTROL_BEGIN_FB_RUN failed: %d\n", r);
+    return 1;
+  }
+  fprintf(stderr,"OK.\n");
+  return 0;
+}
 
 int beginRun(int filep, int bufsiz, int dopulser) {
   int r;
@@ -1025,15 +1083,48 @@ int beginRun(int filep, int bufsiz, int dopulser) {
     fprintf(stderr,"OK.\n");
   }
 
+  fprintf(stderr,"Starting run... ");
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
   }
+  fprintf(stderr,"OK.\n");
 
   return 0;
 }
 
+int testPedestalCollection(int filep, int bufsiz) {
+  int targetATWD0 = 1000;
+  int targetATWD1 = 1000;
+  int targetFADC  = 2000;
+  unsigned long nped0, nped1, nadc;
+
+  int r;
+  int itrial; for(itrial=0; itrial<100; itrial++) {
+    fprintf(stderr,"Ped. run %d\n", itrial);
+    if((r=domsg(filep, bufsiz, 1000,
+                EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
+                targetATWD0, targetATWD1, targetFADC)) != 0) {
+      fprintf(stderr,"EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
+      return 1;
+    }
+
+    if((r=domsg(filep, bufsiz, 1000,
+                EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
+                &nped0, &nped1, &nadc)) != 0) {
+      fprintf(stderr,"EXPCONTROL_GET_NUM_PEDESTALS failed: %d.\n", r);
+      return 1;
+    }
+
+    if(nped0 < targetATWD0 || nped1 < targetATWD1 || nadc < targetFADC) {
+      fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) are below targets (%d, %d, %d)!\n", 
+	      nped0, nped1, nadc, targetATWD0, targetATWD1, targetFADC);
+      return 1;
+    }
+  }
+  return 0;
+}
 
 int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
 			   unsigned short atwdthresh[],
@@ -1041,16 +1132,16 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   int targetATWD0 = 1000;
   int targetATWD1 = 1000;
   int targetFADC  = 2000;
+  unsigned long nped0, nped1, nadc;
 
   int r;
   if((r=domsg(filep, bufsiz, 1000,
-              EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
+	      EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
 	      targetATWD0, targetATWD1, targetFADC)) != 0) {
     fprintf(stderr,"EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
     return 1;
   }
 
-  unsigned long nped0, nped1, nadc;
   if((r=domsg(filep, bufsiz, 1000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
 	      &nped0, &nped1, &nadc)) != 0) {
@@ -1059,10 +1150,10 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   }
   
   if(nped0 < targetATWD0 || nped1 < targetATWD1 || nadc < targetFADC) {
-    fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) are below targets (%d, %d, %d)!\n", nped0, nped1, nadc,
-	   targetATWD0, targetATWD1, targetFADC);
-    fprintf(stderr,"SKIPPING enforcement of this check for now...\n");
-    //return 1;
+    fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) are below targets (%d, %d, %d)!\n", 
+	    nped0, nped1, nadc, targetATWD0, targetATWD1, targetFADC);
+    //fprintf(stderr,"SKIPPING enforcement of this check for now...\n");
+    return 1;
   }
   
   fprintf(stderr,"Collected %ld ATWD0, %ld ATWD1 and %ld FADC pedestals.\n", nped0, nped1, nadc);
