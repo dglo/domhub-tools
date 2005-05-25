@@ -140,17 +140,18 @@ sub testDOM {
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
     return 0 if $dohv && !setHVTest($dom);
-    return 0 unless LCMoniTest($dom);
-    return 0 unless collectDiscTrigDataCompressedForced($dom);
-    return 0 unless collectDiscTrigDataCompressedPulser($dom);
-    return 0 unless shortEchoTest($dom);
+    return 0 unless SNTest($dom);
     return 0 unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
-    return 0 unless collectCPUTrigDataTestNoLC($dom);
     return 0 unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
+    return 0 unless collectCPUTrigDataTestNoLC($dom);
+    return 0 unless LCMoniTest($dom);
+    return 0 unless shortEchoTest($dom);
     printc("Testing variable heartbeat/pulser rate:  \n");
     return 0 unless varyHeartbeatRateTestNoLC($dom);  
     return 0 unless swConfigMoniTest($dom);
     return 0 unless hwConfigMoniTest($dom);
+    return 0 unless collectDiscTrigDataCompressedForced($dom);    
+    return 0 unless collectDiscTrigDataCompressedPulser($dom);
 
     if(defined $doflasher) {
 	return 0 unless flasherVersionTest($dom);
@@ -178,14 +179,25 @@ sub testHash {
     }
 }
 
+sub SNTest {
+    my $dom = shift; die unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTrigger",
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 1000,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                SNDeadTime  => 6400,
+                                skipRateChk => 1);
+}
+
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift; die unless defined $dom;
     return doShortHitCollection(DOM         => $dom, 
 				Trig        => CPUTRIG,
 				Name        => "cpuTrigger", 
-				LcUp        => 0,
-				LcDn        => 0,
-				Duration    => 4,
 				DoPulser    => 0,
 				Threshold   => 0, 
 				PulserRate  => 1,
@@ -198,9 +210,6 @@ sub collectDiscTrigDataTestNoLC {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "discTrigger",
-                                LcUp        => 0,
-                                LcDn        => 0,
-                                Duration    => 4,
                                 DoPulser    => 0,
                                 Threshold   => $speThresh,
                                 PulserRate  => 1,
@@ -213,9 +222,6 @@ sub collectPulserDataTestNoLC {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "pulserTrigger",
-                                LcUp        => 0,
-                                LcDn        => 0,
-                                Duration    => 4,
                                 DoPulser    => 1,
                                 Threshold   => $speThresh,
                                 PulserRate  => 10,
@@ -230,9 +236,6 @@ sub varyHeartbeatRateTestNoLC {
 	return 0 unless doShortHitCollection(DOM         => $dom,
 					     Trig        => DISCTRIG,
 					     Name        => "heartbeat_".$rate."Hz",
-					     LcUp        => 0,
-					     LcDn        => 0,
-					     Duration    => 4,
 					     DoPulser    => 0,
 					     Threshold   => $speThresh,
 					     PulserRate  => $rate,
@@ -247,9 +250,6 @@ sub collectDiscTrigDataCompressedForced {
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprForced",
-				LcUp        => 0,
-				LcDn        => 0,
-				Duration    => 4,
 				DoPulser    => 0,
 				Threshold   => $speThresh,
 				PulserRate  => 2000,
@@ -262,9 +262,6 @@ sub collectDiscTrigDataCompressedPulser {
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprPulsr",
-				LcUp        => 0,
-				LcDn        => 0,
-				Duration    => 4,
 				DoPulser    => 1,
 				Threshold   => $speThresh,
 				PulserRate  => 2000,
@@ -681,18 +678,23 @@ sub doShortHitCollection {
     my $dom      = $args{DOM};         die unless defined $dom;
     my $type     = $args{Trig};        die unless defined $type;
     my $name     = $args{Name};        die unless defined $name;
-    my $lcup     = $args{LcUp};        die unless defined $lcup;
-    my $lcdn     = $args{LcDn};        die unless defined $lcdn;
-    my $dur      = $args{Duration};    die unless defined $dur;
+    my $lcup     = $args{LcUp};        $lcup = 0 unless defined $lcup;
+    my $lcdn     = $args{LcDn};        $lcdn = 0 unless defined $lcdn;
+    my $dur      = $args{Duration};    $dur  = 4 unless defined $dur;
     my $puls     = $args{DoPulser};    die unless defined $puls;
     my $thresh   = $args{Threshold};   die unless defined $thresh;
     my $pulsrate = $args{PulserRate};  # Leave undefined to accept default
     my $compMode = $args{Compression}; # ""
     my $dataFmt  = $args{Format};      # ""
+    my $SNDeadT  = $args{SNDeadTime};  # ""
+    my $skipRateChk = $args{skipRateChk};
 
     printc "Collecting $name (trigger type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
     my $monFile = "short_$name"."_$dom.moni";
+    my $snFile  = "short_$name"."_$dom.sn"; # Only used if SNDeadT given
+    unlink $engFile if -e $engFile;
+    unlink $monFile if -e $monFile;
     my $mode    = 0;
     if($lcup && $lcdn) {
 	$mode = 1;
@@ -707,11 +709,12 @@ sub doShortHitCollection {
     my $fmtArg      = (defined $dataFmt) ? "-X $dataFmt" : "";
     my $compArg     = (defined $compMode) ? "-Z $compMode" : "";
     my $threshArg   = "";
+    my $snArg       = (defined $SNDeadT) ? "-K 1,0,$SNDeadT,$snFile" : "";
     if(defined $compMode && $compMode == CMP_RG) {
 	$threshArg = "-R 100,100,100,100,100";
     }
     my $cmd       = "$dat -d $dur $defaultDACS -S$speThreshDAC,$thresh "
-	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg "
+	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg $snArg "
 	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type -B -i $engFile $lcstr $dom 2>&1";
 
     my $result    = docmd $cmd;
@@ -723,22 +726,32 @@ sub doShortHitCollection {
 	    .   $result
 	    .   `decodemoni -v last.moni`;
     }
-    my $ha        = hadError $moni;
-    if(hadError $moni || $result !~ /Done \((\d+) usec\)\./) {
-        $lasterr = "Short $name run failed::\n".
-	    "Command: $cmd\n".
-	    "Result:\n$result\n\n".
-	    "Monitoring:\n$moni\n";
-	$lasterr .= "(Had error or warning in monitoring file $monFile.)\n"
-	    if $ha;
-        return 0;
+
+    my $summary = 
+	"Short run $name:\n".
+	"Command: $cmd\n".
+	"Result:\n$result\n\n".
+	"Monitoring:\n$moni\n";
+    
+    if(hadError $moni) {
+	$lasterr = "$summary\n(Had error or warning in monitoring file $monFile.)\n";
+	return 0;
     }
+    if($result !~ /Done \((\d+) usec\)\./) {
+	$lasterr = "$summary\n(Did not find terminator ['Done'] string from domapptest)\n";
+	return 0;
+    }
+    if($result =~ /ERROR/) {
+	$lasterr = "$summary\n(Had ERROR in domapptest output)\n";
+	return 0;
+    }
+
     for(split '\n', $moni) {
 	printWarning($_, $monFile) if hadWarning($_);
     }
 
     # Check for trigger rate consistency
-    if($dataFmt == 0 && defined $pulsrate) {
+    if(!$skipRateChk && $dataFmt == 0 && defined $pulsrate) {
 	# Look for discriminator trigger if running in pulser mode:
 	my $desiredType = $puls ? "Discriminator Trigger" : "CPU Trigger";
 	my $nhits   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
@@ -792,10 +805,27 @@ sub doShortHitCollection {
 	return 0;
     }
 
+    # If asked for, look for supernova data
+    my $SNbins        = 0;
+    my $SNcountsTotal = 0;
+    if(defined $SNDeadT) {
+	my @snData = `/usr/local/bin/decodesn $snFile 2>&1`;
+	for(@snData) {
+	    if(/(\d+) counts/) {
+		$SNbins ++;
+		$SNcountsTotal += $1;
+	    }
+	}
+	if($SNbins == 0) {
+	    $lasterr .= "$summary\n\nSupernova data file $snFile had no timeslice data!\n";
+	    return 0;
+	}
+    }
+    my $SNsummary = (defined $SNDeadT) ? ", $SNbins SN timeslices, $SNcountsTotal SN counts" : "";
     if($nhitsline =~ /^\s+(\d+)$/ && $1 > 0) {
 	my $nhits = $1;
 	my $ratestr;
-	print "OK ($nhits hits).\n";
+	print "OK ($nhits hits$SNsummary).\n";
     } else {
 	$lasterr = "Didn't get any hit data - check $engFile.\n".
 	    "Monitoring stream:\n$moni\ndomapptest log:\n$result\n";
@@ -810,7 +840,6 @@ sub doShortHitCollection {
 	    return 0;
 	}
     }
-
     return 1;
 }
 

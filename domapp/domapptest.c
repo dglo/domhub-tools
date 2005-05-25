@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.13 2005-05-20 21:09:30 jacobsen Exp $
+   $Id: domapptest.c,v 1.14 2005-05-25 05:38:02 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -69,8 +69,11 @@ int usage(void) {
 	  "    -R <a0>,<a1>,<a2>,<a3>,<f> Set road-grader thresholds for both ATWDs and FADC\n"
 	  "    -p: Run pulser to generate SPE triggers in absence of real PMT\n"
 	  "    -P <rate>: Set pulser/heartbeat rate to <rate> Hz\n"
-	  "  If no message types are given, echo test will be used.\n"
 	  "    -L <Volts>: Set DOM high voltage (BE CAREFUL!). Volts == DAC units/2.\n"
+	  "    -K <file>,<freq>,<mode>,<deadtime>: collect supernova data in file <file>; \n"
+	  "       frequency is relative to hit, moni etc. messages.  \n"
+	  "       Mode 0=spe, 1=mpe; deadtime in [6400, 512000].\n"
+	  "  If no message types are given, echo test will be used.\n"
 	  "  Roll-your-own Custom Messages:\n"
 	  "    -C <type>,<subtype> E.g., -C 4,12 gives EXPCONTROL_BEGIN_RUN message.\n"
 	  );
@@ -99,7 +102,7 @@ int getBufSize(char *procFile);
 int getDevFile(char *filename, int len, char *arg);
 void drainMsgs(int filep, unsigned char * rdbuf, int bufsiz, int showIt, int timeOutTrials);
 void fillEchoMessageData(DOMMSG *m, int max);
-int * getCycle(int efreq, int mfreq, int hfreq, int dfreq);
+int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq);
 int getRandInt(int min, int max);
 int resetLBM(int filep, int bufsiz);
 int beginRun(int filep, int bufsiz, int dopulser);
@@ -107,6 +110,9 @@ int endRun(int filep, int bufsiz, int dopulser);
 int setUpLC(int filep, int bufsiz, int mode, int pre_ns, int post_ns);
 int clearLC(int filep, int bufsiz);
 int turnOffLC(int filep, int bufsiz);
+int setUpSN(int filep, int bufsiz, int snmode, int sndeadt);
+int turnOffSN(int filep, int bufsiz);
+
 int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh, 
 			   unsigned short atwdthresh[], 
 			   unsigned short fadc_thresh);
@@ -115,17 +121,19 @@ int highVoltageOff(int filep, int bufsiz);
 int setPulserRate(int filep, int bufsiz, int rate);
 int setCompression(int filep, int bufsiz, int mode);
 int setDataFormat(int filep, int bufsiz, int mode);
+void turnOffPeriodicMonitoring(int filep, int bufsiz);
 
 #define EMPTY  0
 #define ECHO   1
 #define MONI   2
 #define HITS   3
 #define SETDAC 4
-char *msgstr[5] = {
-  "EMPTY", "ECHO", "MONITOR", "HIT", "SETDAC"
+#define SN     5
+char *msgstr[6] = {
+  "EMPTY", "ECHO", "MONITOR", "HIT", "SETDAC", "SN"
 };
-static unsigned long long msgBytes[5];
-static unsigned long msgs[4];
+static unsigned long long msgBytes[6];
+static unsigned long msgs[6];
 
 static unsigned short pedavg[2][4][ATWDCHSIZ];
 static unsigned short fadcavg[FADCSIZ];
@@ -174,6 +182,7 @@ int main(int argc, char *argv[]) {
   int custType, custSubType;
   char monifile[MAXFILENAME];
   char hitsfile[MAXFILENAME];
+  char snfile[MAXFILENAME];
   int monifd, hitsfd;
   int defineTrig    = 0;
   int defineEngrFmt = 0;
@@ -193,10 +202,11 @@ int main(int argc, char *argv[]) {
   unsigned long long dtrwmin = 0, dtrwmax = 0;
   int doFmt = 0, fmtMode = 0;
   int doComp = 0, compMode = 0;
+  int dosn = 0, snmode, sndeadt, sfreq=0;
   while(1) {
     char c = getopt(argc, argv, 
 		    "QVvhcBOspi:d:E:M:H:D:m:w:f:T:N:"
-		    "W:F:C:R:A:S:L:I:P:Z:X:");
+		    "W:F:C:R:A:S:L:I:P:Z:X:K:");
     if (c == -1) break;
 
     switch(c) {
@@ -213,17 +223,25 @@ int main(int argc, char *argv[]) {
     case 'H': hfreq = atoi(optarg); dopoll = 1; break;
     case 'p': dopulser = 1; break;
     case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
-    case 'I': if(sscanf(optarg, "%d,%d,%d", &lcmode,
-			&pre_ns, &post_ns)!=3) exit(usage());
+    case 'K': 
+      if(sscanf(optarg, "%d,%d,%d,%s", 
+		&sfreq, &snmode, &sndeadt, snfile)!=4) exit(usage());
+      dosn = 1;
+      break;
+    case 'I': 
+      if(sscanf(optarg, "%d,%d,%d", &lcmode,
+		&pre_ns, &post_ns)!=3) exit(usage());
       dolc = 1;
       break;
-     case 'R': if(sscanf(optarg, "%hu,%hu,%hu,%hu,%hu", 
-			&atwd_thresh[0],&atwd_thresh[1],&atwd_thresh[2],&atwd_thresh[3],
-			&fadc_thresh)!=5) exit(usage());
+     case 'R': 
+       if(sscanf(optarg, "%hu,%hu,%hu,%hu,%hu", 
+		 &atwd_thresh[0],&atwd_thresh[1],&atwd_thresh[2],&atwd_thresh[3],
+		 &fadc_thresh)!=5) exit(usage());
       setthresh = 1;
       break;
-    case 'D': if(sscanf(optarg, "%d,%d,%d,%d", &dacnum,&dacmin,&dacmax,&dfreq)!=4) 
-      exit(usage()); 
+    case 'D': 
+      if(sscanf(optarg, "%d,%d,%d,%d", &dacnum,&dacmin,&dacmax,&dfreq)!=4) 
+	exit(usage()); 
       break;
     case 'T': 
       if(sscanf(optarg, "%d", &trigMode)!=1) exit(usage()); 
@@ -304,13 +322,13 @@ int main(int argc, char *argv[]) {
   if(getDevFile(filename, BSIZ, argv[optind])) exit(usage());
 
   /* Determine message frequencies */
-  if(!efreq && !mfreq && !hfreq && !dfreq) {
+  if(!efreq && !mfreq && !hfreq && !dfreq && !sfreq) {
     fprintf(stderr,"No message types specified... won't poll domapp for data.\n");
   } 
 
   int * cyclic;
   if(dopoll) {
-    cyclic = getCycle(efreq, mfreq, hfreq, dfreq);
+    cyclic = getCycle(efreq, mfreq, hfreq, dfreq, sfreq);
     if(!cyclic) { fprintf(stderr,"Malloc failed.\n"); exit(-1); }
     int showfreq = 0, il;
     for(il=0;showfreq && il<efreq+mfreq+hfreq+dfreq;il++) {
@@ -371,6 +389,13 @@ int main(int argc, char *argv[]) {
   /* Prepare "get hits" message */
   DOMMSG * getHitsMsg = newGetHitDataMsg();
   if(getHitsMsg == NULL) { fprintf(stderr,"Couldn't get buffer for hit request message!\n"); exit(-1); }
+
+  /* Prepare "get SN data" message */
+  DOMMSG * getSNDataMsg = newGetSNDataMsg();
+  if(getSNDataMsg == NULL) { 
+    fprintf(stderr,"Couldn't get buffer for SN data request message!\n");
+    exit(-1); 
+  }
 
   DOMMSG * msgReply = (DOMMSG *) malloc(sizeof(DOMMSG));
   if(msgReply == NULL) { fprintf(stderr,"Couldn't get buffer for message reply!\n"); exit(-1); }
@@ -521,6 +546,22 @@ int main(int argc, char *argv[]) {
     clearLC(filep, bufsiz);
   }
 
+  /* Set up supernova system, if desired */
+  int snfd;
+  if(dosn) {
+    printf("%s %d %d", snfile, snmode, sndeadt);
+    if(setUpSN(filep, bufsiz, snmode, sndeadt)) {
+      fprintf(stderr,"Domapp supernova readout initialization failed.\n");
+      exit(-1);
+    }
+    snfd = open(snfile, O_RDWR|O_TRUNC|O_CREAT, 0644);
+    if(snfd <= 0) {
+      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", snfile, errno, strerror(errno));
+      exit(-1);
+    }
+  }
+  
+  /* Start data taking */
   if(dohitbuf && beginRun(filep, bufsiz, dopulser)) {
       fprintf(stderr,"Domapp buffering initialization failed.\n");
       exit(-1);
@@ -550,6 +591,7 @@ int main(int argc, char *argv[]) {
 	switch(cyclic[icyc]) {
 	case MONI: sendType = MONI; msgToSend = moniMsg; break;
 	case HITS: sendType = HITS; msgToSend = getHitsMsg; break;
+	case SN:   sendType = SN;   msgToSend = getSNDataMsg; break;
 	case SETDAC: 
 	  sendType = SETDAC; 
 	  setDacMsgDacValue(dacMsg, getRandInt(dacmin, dacmax));
@@ -571,7 +613,7 @@ int main(int argc, char *argv[]) {
 	  fprintf(stderr,"sendMsg gave -1, errno=%d (%s).\n", errno, strerror(errno));
 	  exit(-1);
 	} else {
-	  icyc++; if(icyc >= efreq+mfreq+hfreq+dfreq) icyc=0;
+	  icyc++; if(icyc >= efreq+mfreq+hfreq+dfreq+sfreq) icyc=0;
 	  msgBytes[sendType] += len;
 	  gotwrite = 1;
 	  /* Remember time of last write */
@@ -627,8 +669,22 @@ int main(int argc, char *argv[]) {
 	      msgBytes[HITS] += len;
 	      if(dlen && savehits) {
 		int nh = write(hitsfd, msgReply->data, dlen);
-		if(nh != dlen) { fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
-					nh, dlen); exit(-1); }
+		if(nh != dlen) { 
+		  fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
+			  nh, dlen); 
+		  exit(-1); 
+		}
+	      }
+	    } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_SN_DATA) {
+	      msgs[SN]++;
+	      msgBytes[SN] += len;
+	      if(dlen) {
+		int ns = write(snfd, msgReply->data, dlen);
+		if(ns != dlen) { 
+		  fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
+			  ns, dlen); 
+		  exit(-1);
+		}
 	      }
 	    } else {
 	      fprintf(stderr,"Unknown message mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
@@ -670,11 +726,12 @@ int main(int argc, char *argv[]) {
 	       || !((((int)dtsec)%100)&& dtsec<1000) 
 	       ||  !(((int)dtsec)%1000))) {
 	  double totBytes = (double) msgBytes[ECHO] + (double) msgBytes[MONI] + 
-	    (double) msgBytes[HITS] + (double) msgBytes[SETDAC];
+	    (double) msgBytes[HITS] + (double) msgBytes[SETDAC] + (double) msgBytes[SN];
 	  double echoDataRate = totBytes / (((double) dtsec)*1E3);
-	  fprintf(stderr,"%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %2.2fMB, %2.2f kB/sec", 
-		 dtsec, dtusec, msgs[ECHO], msgs[MONI], msgs[HITS], msgs[SETDAC], 
-		 totBytes/1E6, echoDataRate);
+	  fprintf(stderr,"%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %lu sn, "
+		  "%2.2fMB, %2.2f kB/sec", 
+		  dtsec, dtusec, msgs[ECHO], msgs[MONI], msgs[HITS], msgs[SETDAC], msgs[SN],
+		  totBytes/1E6, echoDataRate);
 	  if(verbose) {
 	    fprintf(stderr," dtmin=%llu dtmax=%llu", dtrwmin, dtrwmax);
 	  }
@@ -686,9 +743,12 @@ int main(int argc, char *argv[]) {
 	    fprintf(stderr,"endRun failed.\n");
 	    exit(-1);
 	  }
-	  if(turnOffLC(filep, bufsiz)) {
+	  if(dolc && turnOffLC(filep, bufsiz))
 	    fprintf(stderr,"turnOffLC failed.\n");
-	  }
+	  if(dosn && turnOffSN(filep, bufsiz))
+	    fprintf(stderr,"turnOffSN failed.\n");
+	  if(hwival || cfival) 
+	    turnOffPeriodicMonitoring(filep, bufsiz);
 	  done = 1;
 	}
 	/* Turn off HV when duration is up so we can see it in 
@@ -838,8 +898,8 @@ void fillEchoMessageData(DOMMSG *m, int max) {
   for(i=0; i<max; i++) m->data[i] = i & 0xFF;
 }
 
-int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
-  int n = efreq+mfreq+hfreq+dfreq;
+int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq) {
+  int n = efreq+mfreq+hfreq+dfreq+sfreq;
   int denom = n;
   int * a = malloc(n*sizeof(int));
   if(!a) return NULL;
@@ -849,6 +909,7 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
     double eint = (double) efreq / (double) denom;
     double mint = (double) (efreq+mfreq) / (double) denom;
     double hint = (double) (efreq+mfreq+hfreq) / (double) denom;
+    double sint = (double) (efreq+mfreq+hfreq+dfreq) / (double) denom;
     if(x < eint) {
       a[i] = ECHO;
       efreq--;
@@ -858,9 +919,12 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq) {
     } else if(x < hint) {
       a[i] = HITS;
       hfreq--;
-    } else {
+    } else if(x < sint) {
       a[i] = SETDAC;
       dfreq--;
+    } else {
+      a[i] = SN;
+      sfreq--;
     }
     denom--;    
   }
@@ -879,7 +943,7 @@ int endRun(int filep, int bufsiz, int dopulser) {
   }
 
   if(dopulser) {
-    fprintf(stderr,"Turning off front-end pulser... \n");
+    fprintf(stderr,"Turning off front-end pulser... ");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
       fprintf(stderr,"DSC_SET_PULSER_OFF failed: %d\n", r);
       exit(-1);
@@ -895,6 +959,26 @@ int clearLC(int filep, int bufsiz) {
   if((r=domsg(filep, bufsiz, 1000,
 	      DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", 0)) != 0) {
     fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
+    return 1;
+  }
+  return 0;
+}
+
+int setUpSN(int filep, int bufsiz, int snmode, int sndeadt) {
+  int r;
+  if((r=domsg(filep, bufsiz, 1000,
+              DOM_SLOW_CONTROL, DSC_ENABLE_SN, "-LC", sndeadt, snmode)) != 0) {
+    fprintf(stderr,"DSC_ENABLE_SN failed: %d\n", r);
+    return 1;
+  }
+  return 0;
+}
+
+int turnOffSN(int filep, int bufsiz) {
+  int r;
+  if((r=domsg(filep, bufsiz, 1000,
+              DOM_SLOW_CONTROL, DSC_DISABLE_SN, "")) != 0) {
+    fprintf(stderr,"DSC_ENABLE_SN failed: %d\n", r);
     return 1;
   }
   return 0;
@@ -933,7 +1017,7 @@ int beginRun(int filep, int bufsiz, int dopulser) {
   int r;
 
   if(dopulser) {
-    fprintf(stderr,"Turning on front-end pulser... \n");
+    fprintf(stderr,"Turning on front-end pulser... ");
     if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_ON, ""))) {
       fprintf(stderr,"DSC_SET_PULSER_ON failed: %d\n", r);
       exit(-1);
@@ -977,7 +1061,7 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   if(nped0 < targetATWD0 || nped1 < targetATWD1 || nadc < targetFADC) {
     fprintf(stderr,"Pedestal sums (%ld,%ld,%ld) are below targets (%d, %d, %d)!\n", nped0, nped1, nadc,
 	   targetATWD0, targetATWD1, targetFADC);
-    fprintf(stderr, "Warning... DISABLING enforcement of this check...\n\n");
+    fprintf(stderr,"SKIPPING enforcement of this check for now...\n");
     //return 1;
   }
   
@@ -1063,7 +1147,7 @@ int getRandInt(int min, int max) {
 
 int setPulserRate(int filep, int bufsiz, int rate) {
   int r;
-  fprintf(stderr,"Setting pulser rate to %d Hz...\n", rate);
+  fprintf(stderr,"Setting pulser rate to %d Hz... ", rate);
   if((r=domsg(filep, bufsiz, 1000,
               DOM_SLOW_CONTROL, DSC_SET_PULSER_RATE, "-S", (unsigned short) rate)) != 0) {
     fprintf(stderr,"DSC_SET_PULSER_RATE failed: %d\n", r);
@@ -1195,4 +1279,14 @@ int highVoltageOff(int filep, int bufsiz) {
     return 1;
   }
   return 0;
+}
+
+void turnOffPeriodicMonitoring(int filep, int bufsiz) {
+  fprintf(stderr,"Turning off periodic monitoring... ");
+  int r;
+  if((r=domsg(filep, bufsiz, 1000, DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, "-LL", 0, 0)) != 0) {
+    fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
+    exit(-1);
+  }
+  fprintf(stderr,"OK.\n");
 }

@@ -67,6 +67,7 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DATA_ACC_GET_DATA_FORMAT   25
 #define DATA_ACC_SET_COMP_MODE     26
 #define DATA_ACC_GET_COMP_MODE     27
+#define DATA_ACC_GET_SN_DATA       28
 
 #define DSC_READ_ALL_ADCS 10
 #define DSC_READ_ONE_ADC 11
@@ -108,6 +109,8 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DSC_GET_LC_SPAN 56
 #define DSC_SET_LC_CABLE_LEN 57
 #define DSC_GET_LC_CABLE_LEN 58
+#define DSC_ENABLE_SN 59
+#define DSC_DISABLE_SN 60
 #define EXPCONTROL_BEGIN_RUN 12
 #define EXPCONTROL_END_RUN 13
 #define EXPCONTROL_DO_PEDESTAL_COLLECTION 16
@@ -321,6 +324,17 @@ DOMMSG * newGetDomappReleaseMsg(void) {
   if(!m) return NULL;
   setMsgType(m, MESSAGE_HANDLER);
   setMsgSubtype(m, MSGHAND_GET_DOMAPP_RELEASE);
+  setMsgStatus(m, 0);
+  setMsgID(m, 0);
+  setMsgDataLen(m, 0);
+  return m;
+}
+
+DOMMSG * newGetSNDataMsg(void) {
+  DOMMSG * m = (DOMMSG *) malloc(sizeof(DOMMSG));
+  if(!m) return NULL;
+  setMsgType(m, DATA_ACCESS);
+  setMsgSubtype(m, DATA_ACC_GET_SN_DATA);
   setMsgStatus(m, 0);
   setMsgID(m, 0);
   setMsgDataLen(m, 0);
