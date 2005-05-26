@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.15 2005-05-26 03:42:30 jacobsen Exp $
+   $Id: domapptest.c,v 1.16 2005-05-26 20:26:01 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -57,6 +57,7 @@ int usage(void) {
 	  "    -T <trigmode>:\n"
 	  "       Set trigger mode to <trigmode> (0=testpat 1=cpu 2=disc)\n"
           "    -Z <mode>: Set hit data compression mode (0==uncompressed 1==roadgrader)\n"
+          "    -o: Test repeated collection of pedestals\n"
 	  "    -X <mode>: Set hit data format (0==engineering format 1==raw)\n"
 	  "    -A <ATWD>: Select ATWD (0 or 1) for hit data\n"
 	  "    -N <nch0>,<nch1>,<nch2>,<nch3>: Number of samples (0,16,32,64,128)\n"
@@ -211,16 +212,18 @@ int main(int argc, char *argv[]) {
   unsigned long long dtrwmin = 0, dtrwmax = 0;
   int doFmt = 0, fmtMode = 0;
   int doComp = 0, compMode = 0;
+  int doCompTest = 0; 
   int dosn = 0, snmode, sndeadt, sfreq=0;
 
   while(1) {
     char c = getopt(argc, argv, 
-		    "QVvhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
+		    "QVovhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
 		    "W:F:C:R:A:S:L:I:P:Z:X:K:u:");
     if (c == -1) break;
 
     switch(c) {
     case 'Q': getDOMID = 1; break;
+    case 'o': doCompTest = 1; break;
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
     case 's': stuffit = 1; break;
@@ -363,6 +366,12 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"Can't open file %s (%d:%s)\n", filename, errno, strerror(errno));
     exit(-1);
   }   
+
+  if(doCompTest) {
+    if(testPedestalCollection(filep, bufsiz)) exit(-1);
+    fprintf(stderr,"Done.\n");
+    exit(0);
+  }
 
   if(savemoni) {
     fprintf(stderr,"Will save monitoring data to file %s.\n", monifile);
@@ -533,7 +542,6 @@ int main(int argc, char *argv[]) {
 
   if(doComp) {
     if(compMode == 1) {
-      //if(testPedestalCollection(filep, bufsiz)) exit(-1);
       if(setUpPedsAndThresholds(filep, bufsiz, setthresh, 
 				atwd_thresh, fadc_thresh)) exit(-1);
     }

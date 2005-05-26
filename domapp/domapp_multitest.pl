@@ -1,16 +1,15 @@
 #!/usr/bin/perl
 
-# upload_and_test.pl
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
+# $Id: domapp_multitest.pl,v 1.24 2005-05-26 20:26:01 jacobsen Exp $
 
-package MY_PACKAGE;
+package DOMAPP_MULTITEST;
 use strict;
 use Getopt::Long;
-sub testDOM;     sub loadFPGA; sub docmd; sub hadError; sub filly;
-sub hadWarning; sub printWarning;
-sub printc;  sub delim;
 
+sub testDOM;     sub loadFPGA;     sub docmd;       sub hadError; sub filly;
+sub hadWarning;  sub printWarning; sub doLongTests; sub printc;   sub delim;
 
 my $failstart = "\n\nFAILURE ------------------------------------------------\n";
 my $failend   =     "--------------------------------------------------------\n";
@@ -44,6 +43,7 @@ Options:
     -V:          Run tests requiring HV (SEALED, DARK DOMs ONLY)
     -A <prog>:   Use <prog> rather than $dat
     -l <name>:   Load FPGA image <name> from flash before test
+    -o:          Perform long duration tests
 
 If -V or -F options are not given, only tests appropriate for a
 bare DOM mainboard are given.
@@ -53,10 +53,11 @@ EOF
 }
 
 my ($help, $image, $showcmds, $loadfpga, $detailed,
-    $dohv, $doflasher);
+    $dohv, $doflasher, $dolong);
 GetOptions("help|h"          => \$help,
 	   "upload|u=s"      => \$image,
 	   "showcmds|s"      => \$showcmds,
+           "dolong|o"        => \$dolong,
            "detailed|d"      => \$detailed,
 	   "loadfpga|l=s"    => \$loadfpga,
            "dohv|V"          => \$dohv,
@@ -142,6 +143,8 @@ sub testDOM {
     return 0 unless versionTest($dom);
     return 0 unless getDOMIDTest($dom);
     return 0 unless asciiMoniTest($dom);
+
+    return 0 if $dolong    && !doLongTests($dom); # Move this to bottom of list
 
     return 0 if $doflasher && !flasherVersionTest($dom);
     return 0 if $dohv      && !setHVTest($dom);
@@ -907,5 +910,31 @@ sub flasherTest {
 }
 
 sub filly { my $pat = shift; my @l = split '/', $pat; return $l[-1]; }
+
+sub doMultiplePedestalFetch {
+    my $dom = shift; die unless defined $dom;
+    printc "Running multiple pedestal fetch test... ";
+    my $cmd = "$dat -o $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result !~ /Done/) {
+	print "\nTest failed... fetching monitoring data...\n";
+        my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
+        my $result     = docmd $getMoniCmd;
+	my $moni       = `decodemoni -v last.moni|grep -v HDR`;
+        $lasterr = "Command: $cmd\n"
+	    .      "Result:\n$result\n\n"
+	    .      "Monitoring stream:\n$moni\n";
+	return 0;
+    }
+    print "OK.\n";
+}
+
+sub doLongTests {
+    my $dom = shift; die unless defined $dom;
+    printc "Running long tests now... \n";
+    return 0 unless doMultiplePedestalFetch($dom);
+    return 1;
+}
+
 __END__
 
