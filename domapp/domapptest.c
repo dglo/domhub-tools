@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.16 2005-05-26 20:26:01 jacobsen Exp $
+   $Id: domapptest.c,v 1.17 2005-05-27 20:41:37 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -295,7 +295,10 @@ int main(int argc, char *argv[]) {
     case 'f': cfival = atoi(optarg); break;
     case 'L': dohv = 1; hvdac = atoi(optarg)*2; break;
     case 'S': 
-      if(sscanf(optarg, "%d,%d", &dac, &val)!=2) { fprintf(stderr,"Bad arg. format!\n"); exit(usage()); }
+      if(sscanf(optarg, "%d,%d", &dac, &val)!=2) { 
+	fprintf(stderr,"Bad arg. format!\n"); 
+	exit(usage()); 
+      }
       if(dac<0 || val<0) { fprintf(stderr,"DAC values must be positive!\n"); exit(-1); }
       if(ndacs >= MAXDACS) { fprintf(stderr,"Too many DAC values specified!\n"); exit(-1); }
       dacs[ndacs] = dac; 

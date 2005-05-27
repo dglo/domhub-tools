@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.24 2005-05-26 20:26:01 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.25 2005-05-27 20:41:37 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -300,13 +300,13 @@ sub loadFPGA {
     my $fpga = shift || die;
     printc "Loading FPGA $fpga from flash on DOM $dom... ";
     my $se = "/usr/local/bin/se.pl"; die "Can't find $se!\n" unless -e $se;
-    my $loadcmd = "$se $dom s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif"
-	." s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif";
-    my $result = `$loadcmd 2>&1`;
+    my $loadcmd = "$se $dom "
+	.         "s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif "
+	.         "s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif.+?\\>";
+    my $result = docmd $loadcmd;
     if($result =~ /SUCCESS/) { 
         my $details = $detailed?" (se.pl script reported success)":"";
         print "OK$details.\n";
-	sleep 1;
     } else {
 	$lasterr = "Load of FPGA file failed.  Transcript:\n$result\n";
 	return 0;
