@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.17 2005-05-27 20:41:37 jacobsen Exp $
+   $Id: domapptest.c,v 1.18 2005-05-29 20:42:48 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -88,7 +88,7 @@ int usage(void) {
 
 #define MAX_MSGS_IN_FLIGHT    8 /* Don't queue more than 8 msgs at a time */
 #define MAX_MSG_BYTES      8092
-#define MAXIDLE             500
+#define MAXRDFAILED           5
 #define READCYCLE            10
 #define DO_TEST_INJECT        0 /* Set to true if you want to inject test data */
 #define MINLCWIN            100
@@ -127,7 +127,9 @@ int highVoltageOff(int filep, int bufsiz);
 int setPulserRate(int filep, int bufsiz, int rate);
 int setCompression(int filep, int bufsiz, int mode);
 int setDataFormat(int filep, int bufsiz, int mode);
-void turnOffPeriodicMonitoring(int filep, int bufsiz);
+int turnOffPeriodicMonitoring(int filep, int bufsiz);
+int setUpTrigMode(int filep, int bufsiz, int trigMode);
+int reportableDelta(int dtsec, int lastdtsec);
 
 #define EMPTY  0
 #define ECHO   1
@@ -209,11 +211,11 @@ int main(int argc, char *argv[]) {
   unsigned short bright, win, mask, rate;
   short delay;
   int dolc = 0, pre_ns, post_ns;
-  unsigned long long dtrwmin = 0, dtrwmax = 0;
   int doFmt = 0, fmtMode = 0;
   int doComp = 0, compMode = 0;
   int doCompTest = 0; 
   int dosn = 0, snmode, sndeadt, sfreq=0;
+  int snOn = 0, lcOn = 0, hvOn = 0, moniOn = 0;
 
   while(1) {
     char c = getopt(argc, argv, 
@@ -238,13 +240,15 @@ int main(int argc, char *argv[]) {
     case 'p': dopulser = 1; break;
     case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
     case 'u':
-      if(sscanf(optarg, "%hu,%hu,%hd,%hu,%hu", &bright,&win,&delay,&mask,&rate)!=5) exit(usage());
+      if(sscanf(optarg, "%hu,%hu,%hd,%hu,%hu", 
+		&bright,&win,&delay,&mask,&rate)!=5) exit(usage());
       dofbrun = 1;
       break;
     case 'K': 
       if(sscanf(optarg, "%d,%d,%d,%s", 
 		&sfreq, &snmode, &sndeadt, snfile)!=4) exit(usage());
-      dosn = 1;
+      dosn   = 1;
+      dopoll = 1;
       break;
     case 'I': 
       if(sscanf(optarg, "%d,%d,%d", &lcmode,
@@ -271,8 +275,8 @@ int main(int argc, char *argv[]) {
       defineEngrFmt = 1;
       break;
     case 'W': 
-      if(sscanf(optarg, "%d,%d,%d,%d", &sampwids[0],&sampwids[1],&sampwids[2],&sampwids[3])!=4) 
-	exit(usage()); 
+      if(sscanf(optarg, "%d,%d,%d,%d", 
+		&sampwids[0],&sampwids[1],&sampwids[2],&sampwids[3])!=4) exit(usage()); 
       defineEngrFmt = 1;
       break;
     case 'C': 
@@ -339,8 +343,8 @@ int main(int argc, char *argv[]) {
   }
 
   if(dfreq) 
-    fprintf(stderr,"Will set DAC %d to values in the range [%d, %d] with a relative freq. %d.\n",
-	   dacnum, dacmin, dacmax, dfreq);
+    fprintf(stderr,"Will set DAC %d to values in the range [%d, %d] with "
+	    "a relative freq. %d.\n", dacnum, dacmin, dacmax, dfreq);
 
   int argcount = argc-optind;
 
@@ -380,7 +384,8 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"Will save monitoring data to file %s.\n", monifile);
     monifd = open(monifile, O_RDWR|O_TRUNC|O_CREAT, 0644);
     if(monifd <= 0) {
-      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", monifile, errno, strerror(errno));
+      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", 
+	      monifile, errno, strerror(errno));
       exit(-1);
     }
   }
@@ -389,7 +394,8 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"Will save hit data to file %s.\n", hitsfile);
     hitsfd = open(hitsfile, O_RDWR|O_TRUNC|O_CREAT, 0644);
     if(hitsfd <= 0) {
-      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", hitsfile, errno, strerror(errno));
+      fprintf(stderr,"Can't open file %s for output (%d:%s)\n", 
+	      hitsfile, errno, strerror(errno));
       exit(-1);
     }
   }
@@ -405,33 +411,19 @@ int main(int argc, char *argv[]) {
     usleep(3000000);  
   }
 
-  /* Prepare downgoing echomessage */
-  DOMMSG * echoMsg = newEchoMsg();
-  if(echoMsg == NULL) { fprintf(stderr,"Can't get message buffer!\n"); exit(-1); }
+  /* Prepare downgoing messages */
+  DOMMSG * echoMsg      = newEchoMsg();
+  DOMMSG * moniMsg      = newMoniMsg();
+  DOMMSG * getHitsMsg   = newGetHitDataMsg();
+  DOMMSG * dacMsg       = newSetDacMsg(dacnum, 0);
+  DOMMSG * getSNDataMsg = newGetSNDataMsg();
+  DOMMSG * msgReply     = (DOMMSG *) malloc(sizeof(DOMMSG));
+  if(!echoMsg || !moniMsg || !dacMsg || !getHitsMsg || !getSNDataMsg || !msgReply) {
+    fprintf(stderr, "Couldn't get message object, probably out of memory?\n");
+    exit(-1);
+  }
   int maxSendData = bufsiz-MSG_HDR_LEN; /* Size of DATA PORTION */
   fillEchoMessageData(echoMsg, maxSendData);
-
-  /* Prepare downgoing monitor request message */
-  DOMMSG * moniMsg = newMoniMsg();
-  if(moniMsg == NULL) { fprintf(stderr,"Can't get monitor message buffer!\n"); exit(-1); }
-
-  /* Prepare "set DAC" message */
-  DOMMSG * dacMsg = newSetDacMsg(dacnum, 0); /* Will set DAC value in main loop below */
-  if(dacMsg == NULL) { fprintf(stderr,"Couldn't get dacMsg!\n"); exit(-1); }
-
-  /* Prepare "get hits" message */
-  DOMMSG * getHitsMsg = newGetHitDataMsg();
-  if(getHitsMsg == NULL) { fprintf(stderr,"Couldn't get buffer for hit request message!\n"); exit(-1); }
-
-  /* Prepare "get SN data" message */
-  DOMMSG * getSNDataMsg = newGetSNDataMsg();
-  if(getSNDataMsg == NULL) { 
-    fprintf(stderr,"Couldn't get buffer for SN data request message!\n");
-    exit(-1); 
-  }
-
-  DOMMSG * msgReply = (DOMMSG *) malloc(sizeof(DOMMSG));
-  if(msgReply == NULL) { fprintf(stderr,"Couldn't get buffer for message reply!\n"); exit(-1); }
 
   /* Start clock */
   int lastdtsec = 0;
@@ -440,8 +432,7 @@ int main(int argc, char *argv[]) {
 
   if(getDOMID) {
     char ID[MAX_DATA_LEN];
-    if((r=domsg(filep, bufsiz, 1000,
-                MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
+    if((r=domsg(filep, bufsiz, 1000, MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
                 "+X", ID)) != 0) {
       fprintf(stderr,"MSGHAND_GET_DOM_ID failed: %d\n", r);
       exit(-1);
@@ -482,7 +473,8 @@ int main(int argc, char *argv[]) {
   }
 
   if(hwival || cfival) {
-    fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", hwival, cfival);
+    fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", 
+	    hwival, cfival);
     if((r=domsg(filep, bufsiz, 1000,
                 DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
 		"-LL", (unsigned long) hwival, (unsigned long) cfival)) != 0) {
@@ -490,8 +482,9 @@ int main(int argc, char *argv[]) {
       exit(-1);
     }
     fprintf(stderr,"OK.\n");
+    moniOn = 1;
   }
-
+  
   if(defineATWD) {
     if(whichATWD != 0 && whichATWD != 1) {
       fprintf(stderr,"Error: must select ATWD 0 or 1!\n\n");
@@ -534,50 +527,23 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"OK.\n");
   }
 
-  if(doPulserRate) {
-    if(setPulserRate(filep, bufsiz, pulserRate)) exit(-1);
-  }
-
-  if(doFmt) {
-    if(setDataFormat(filep, bufsiz, fmtMode)) exit(-1);
-    //printf("turned off data format!\n\n\n");
-  }
+  if(doPulserRate && setPulserRate(filep, bufsiz, pulserRate)) exit(-1);
+ 
+  if(doFmt && setDataFormat(filep, bufsiz, fmtMode)) exit(-1);
 
   if(doComp) {
     if(compMode == 1) {
       if(setUpPedsAndThresholds(filep, bufsiz, setthresh, 
 				atwd_thresh, fadc_thresh)) exit(-1);
     }
-    //printf("turned off compression!!!!!\n\n\n"); //
     if(setCompression(filep, bufsiz, compMode)) exit(-1);
   }
 
-  if(defineTrig) {
-    fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
-		(unsigned char) trigMode)) != 0) {
-      fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
-      exit(-1);
-    }
+  if(defineTrig && setUpTrigMode(filep, bufsiz, trigMode)) exit(-1);
 
-    unsigned char trigModeCheck = 0xFF; 
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
-		&trigModeCheck)) != 0) {
-      fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
-      exit(-1);
-    }
-    if(trigModeCheck != trigMode) { 
-      fprintf(stderr,"DSC_GET_TRIG_MODE failed: trigModeCheck=%d trigMode=%d\n", trigModeCheck, trigMode);
-      exit(-1);
-    }
-    
-    fprintf(stderr,"OK.\n");
-  }
-
-  int hvon = 0;
   if(dohv) {
     if(setHighVoltage(filep, bufsiz, hvdac)) exit(-1);
-    hvon = 1;
+    hvOn = 1;
   }
 
   /* Set up local coincidence event selection for buffering */
@@ -586,6 +552,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr,"Domapp local coincidence initialization failed.\n");
       exit(-1);
     }
+    lcOn = 1;
   } else { /* If !dolc, then set mode to zero */
     clearLC(filep, bufsiz);
   }
@@ -610,7 +577,7 @@ int main(int argc, char *argv[]) {
   /* Set up supernova system, if desired */
   int snfd;
   if(dosn) {
-    printf("%s %d %d", snfile, snmode, sndeadt);
+    /* fprintf(stderr,"%s %d %d", snfile, snmode, sndeadt); */
     if(setUpSN(filep, bufsiz, snmode, sndeadt)) {
       fprintf(stderr,"Domapp supernova readout initialization failed.\n");
       exit(-1);
@@ -620,6 +587,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr,"Can't open file %s for output (%d:%s)\n", snfile, errno, strerror(errno));
       exit(-1);
     }
+    snOn = 1;
   }
 
   /* keep gettimeofday near beginRun to time run correctly */
@@ -631,206 +599,218 @@ int main(int argc, char *argv[]) {
 
   fprintf(stderr,"Entering periodic data collection loop...\n");
   /* Messaging loop */
-  int idle = 0;
   int icyc = 0;
   int done = 0;
 
-  if(dopoll) {
+  while(dopoll) {
+    int gotwrite = 0;
+    int rdfailed = 0;
+    /* Send message until driver input buffer is full or inflight gets too big */
+    while(inflight < MAX_MSGS_IN_FLIGHT) {
+      DOMMSG * msgToSend;
+      int sendType;
+      switch(cyclic[icyc]) {
+      case MONI: sendType = MONI; msgToSend = moniMsg; break;
+      case HITS: sendType = HITS; msgToSend = getHitsMsg; break;
+      case SN:   sendType = SN;   msgToSend = getSNDataMsg; break;
+      case SETDAC: 
+	sendType = SETDAC; 
+	setDacMsgDacValue(dacMsg, getRandInt(dacmin, dacmax));
+	msgToSend = dacMsg; 
+	break;
+      case ECHO: 
+      default: sendType = ECHO; msgToSend = echoMsg; break;
+      }
+      //fprintf(stderr,"S%d ",sendType);
+      /* Write the message */
+      //fprintf(stderr,"w+");
+      int len = sendMsg(filep, msgToSend, 100);
+      //fprintf(stderr,"w-%d ",len);
+      inflight++;
+      if(len == 0) {
+	fprintf(stderr,"Bad return value from sendMsg (%d)!\n", len);
+	exit(-1);
+      } else if(len == -1 && errno == EAGAIN) {
+	break;
+      } else if(len == -1) {
+	fprintf(stderr,"sendMsg gave -1, errno=%d (%s).\n", errno, strerror(errno));
+	exit(-1);
+      } else {
+	icyc++; if(icyc >= efreq+mfreq+hfreq+dfreq+sfreq) icyc=0;
+	msgBytes[sendType] += len;
+	gotwrite = 1;
+	/* Remember time of last write */
+	gettimeofday(&lastTWrite, NULL);
+      }
+      if(!stuffit) break; /* Don't do any more unless stuffing mode */
+    }
+
+    int gotread = 0;
+    int iread   = 0;
     while(1) {
-      int gotread  = 0;
-      int gotwrite = 0;
-      
-      /* Send message until driver input buffer is full or inflight gets too big */
-      while(inflight < MAX_MSGS_IN_FLIGHT) {
-	DOMMSG * msgToSend;
-	int sendType;
-	switch(cyclic[icyc]) {
-	case MONI: sendType = MONI; msgToSend = moniMsg; break;
-	case HITS: sendType = HITS; msgToSend = getHitsMsg; break;
-	case SN:   sendType = SN;   msgToSend = getSNDataMsg; break;
-	case SETDAC: 
-	  sendType = SETDAC; 
-	  setDacMsgDacValue(dacMsg, getRandInt(dacmin, dacmax));
-	  msgToSend = dacMsg; 
-	  break;
-	case ECHO: 
-	default: sendType = ECHO; msgToSend = echoMsg; break;
-	}
-	//fprintf(stderr,"sending type %d...\n",sendType);
-	/* Write the message */
-	int len = sendMsg(filep, msgToSend);
-	inflight++;
-	if(len == 0) {
-	  fprintf(stderr,"Bad return value from sendMsg (%d)!\n", len);
-	  exit(-1);
-	} else if(len == -1 && errno == EAGAIN) {
-	  break;
-	} else if(len == -1) {
-	  fprintf(stderr,"sendMsg gave -1, errno=%d (%s).\n", errno, strerror(errno));
-	  exit(-1);
-	} else {
-	  icyc++; if(icyc >= efreq+mfreq+hfreq+dfreq+sfreq) icyc=0;
-	  msgBytes[sendType] += len;
-	  gotwrite = 1;
-	  /* Remember time of last write */
-	  gettimeofday(&lastTWrite, NULL);
-	}
-	if(!stuffit) break; /* Don't do any more unless stuffing mode */
-      }
-
-      int iread=0;
-      while(1) {
-	int len = getMsg(filep, msgReply, bufsiz, 100);
-	if(len == -1) { // EAGAIN
-	  usleep(1000);
-	} else if(len < 0) {
-	  fprintf(stderr,"getMsg gave %d -- quitting.\n", len);
-	  exit(-1);
-	} else {
-	  //fprintf(stderr,"got subtype %d...\n",msgSubType(msgReply));
-	  gotread = 1;
-	  gettimeofday(&lastTRead, NULL);
-	  unsigned long long dtrw = (lastTRead.tv_sec - lastTWrite.tv_sec)*1000000 + 
-	    (lastTRead.tv_usec - lastTWrite.tv_usec);
-	  if(dtrwmin == 0 || dtrw < dtrwmin) dtrwmin = dtrw;
-	  if(dtrw > dtrwmax) dtrwmax = dtrw;
-	  //fprintf(stderr,"dtrw=%llu min=%llu max=%llu usec\n", dtrw, dtrwmin, dtrwmax);
-	  
-	  //fprintf(stderr,"\nGot %d byte reply from domapp.\n", len);
-	  int rmt    = msgType(msgReply);
-	  int rmst   = msgSubType(msgReply);
-	  int dlen   = msgDataLen(msgReply);
-	  int status = msgStatus(msgReply);
-	  if(status != 1) {
-	    fprintf(stderr,"ERROR: bad status from domapp (%d).\n", status);
-	    fprintf(stderr,"mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
-	    exit(-1);
-	  } else {
-	    inflight--;
-	    if(rmt == MESSAGE_HANDLER && rmst == MSGHAND_ECHO_MSG) {
-	      msgs[ECHO]++;
-	      msgBytes[ECHO] += len;
-	    } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_NEXT_MONI_REC) {
-	      if(dlen && savemoni) {
-		int nm = write(monifd, msgReply->data, dlen);
-		if(nm != dlen) { fprintf(stderr,"Short write (%d of %d bytes) to monitoring stream.\n", 
-					nm, dlen); exit(-1); }
-	      }
-	      msgs[MONI]++;
-	      msgBytes[MONI] += len;
-	    } else if(rmt == DOM_SLOW_CONTROL && rmst == DSC_WRITE_ONE_DAC) {
-	      msgs[SETDAC]++;
-	      msgBytes[SETDAC] += len;
-	    } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_DATA) {
-	      msgs[HITS]++;
-	      msgBytes[HITS] += len;
-	      if(dlen && savehits) {
-		int nh = write(hitsfd, msgReply->data, dlen);
-		if(nh != dlen) { 
-		  fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
-			  nh, dlen); 
-		  exit(-1); 
-		}
-	      }
-	    } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_SN_DATA) {
-	      msgs[SN]++;
-	      msgBytes[SN] += len;
-	      if(dlen) {
-		int ns = write(snfd, msgReply->data, dlen);
-		if(ns != dlen) { 
-		  fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
-			  ns, dlen); 
-		  exit(-1);
-		}
-	      }
-	    } else {
-	      fprintf(stderr,"Unknown message mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
-	    }
-	  } /* status ok */
-	} /* length ok */
-	
-	/* Terminating condition:
-	   stuffing mode: performed READCYCLE attempts to read data 
-	   non-stuff mode: got a message reply.
-	   FIXME: look for timeouts */
-	iread++;
-	if(stuffit) {
-	  if(iread >= READCYCLE) break; /* On to write */
-	} else {
-	  if(gotread) break;
-	}      
-      } /* read cycle */
-
-      if(!gotread && !gotwrite) {
-	idle++;
+      //fprintf(stderr,"r+");
+      int len = getMsg(filep, msgReply, bufsiz, 100);
+      //fprintf(stderr,"r-%d ",len);
+      if(len == 0) { /* EAGAIN */
+	if(rdfailed++ >= MAXRDFAILED) break; /* Deal with it below */
+	if(iread++ >= READCYCLE) break;
 	usleep(1000);
-      } else { /* Only report statistics if something new got through */
-	idle = 0;
-	/* Check for done, show rates, etc. */
-	struct timeval tnow;
-	gettimeofday(&tnow, NULL);
-	unsigned long long dt = (tnow.tv_sec - tstart.tv_sec)*1000000 
-	  + (tnow.tv_usec - tstart.tv_usec);
-	int dtsec = tnow.tv_sec - tstart.tv_sec;
-	int dtusec = tnow.tv_usec - tstart.tv_usec;
-	if(dtusec < 0) {
-	  dtusec += 1000000;
-	  dtsec --;
-	}
-	if(dtsec != lastdtsec && dtsec != 0 
-	   &&        ((int)dtsec <= 10 /* Periodic criteria */
-	       || !((((int)dtsec)%10) && dtsec<100)
-	       || !((((int)dtsec)%100)&& dtsec<1000) 
-	       ||  !(((int)dtsec)%1000))) {
-	  double totBytes = (double) msgBytes[ECHO] + (double) msgBytes[MONI] + 
-	    (double) msgBytes[HITS] + (double) msgBytes[SETDAC] + (double) msgBytes[SN];
-	  double echoDataRate = totBytes / (((double) dtsec)*1E3);
-	  fprintf(stderr,"%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %lu sn, "
-		  "%2.2fMB, %2.2f kB/sec", 
-		  dtsec, dtusec, msgs[ECHO], msgs[MONI], msgs[HITS], msgs[SETDAC], msgs[SN],
-		  totBytes/1E6, echoDataRate);
-	  if(verbose) {
-	    fprintf(stderr," dtmin=%llu dtmax=%llu", dtrwmin, dtrwmax);
-	  }
-	  fprintf(stderr,"\n");
-	}
+	continue;
+      } else if(len < 0) {
+	fprintf(stderr,"getMsg gave error %d -- quitting.\n", len);
+	exit(-1);
+      } 
 
-	if(dohitbuf && dtsec >= secDuration && ! done) {
-	  if(endRun(filep, bufsiz, dopulser)) {
-	    fprintf(stderr,"endRun failed.\n");
-	    exit(-1);
-	  }
-	  if(dolc && turnOffLC(filep, bufsiz))
-	    fprintf(stderr,"turnOffLC failed.\n");
-	  if(dosn && turnOffSN(filep, bufsiz))
-	    fprintf(stderr,"turnOffSN failed.\n");
-	  if(hwival || cfival) 
-	    turnOffPeriodicMonitoring(filep, bufsiz);
-	  done = 1;
-	}
-	/* Turn off HV when duration is up so we can see it in 
-	   monitoring stream */
-	if(dtsec >= secDuration && dohv && hvon) {
-	  hvon = 0;
-	  highVoltageOff(filep, bufsiz); /* We'll do again @ end of loop to be sure */
-	}
+      gotread  = 1;
+      rdfailed = 0;
+      gettimeofday(&lastTRead, NULL);
+      
+      int rmt    = msgType(msgReply);
+      int rmst   = msgSubType(msgReply);
+      int dlen   = msgDataLen(msgReply);
+      int status = msgStatus(msgReply);
 
-	/* Add 1 sec to run length after run stop to get last monitoring, etc. events */
-	if(dtsec >= secDuration+1) {
-	  fprintf(stderr,"Done (%lld usec).\n",dt);
-	  break;
-	}
-	lastdtsec = dtsec;
-      }
+      //fprintf(stderr,"R%d ",rmst);
 
-      if(idle > MAXIDLE) {
-	fprintf(stderr,"No successful reads or writes in %d trials.  DOM died?\n", idle);
+      if(status != 1) {
+	fprintf(stderr,"ERROR: bad status from domapp (%d).\n", status);
+	fprintf(stderr,"mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
 	exit(-1);
       }
+
+      inflight--;
+      if(rmt == MESSAGE_HANDLER && rmst == MSGHAND_ECHO_MSG) {
+	msgs[ECHO]++;    msgBytes[ECHO] += len;
+      } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_NEXT_MONI_REC) {
+	if(dlen && savemoni) {
+	  int nm = write(monifd, msgReply->data, dlen);
+	  if(nm != dlen) { 
+	    fprintf(stderr,"Short write (%d of %d bytes) to monitoring stream.\n", 
+		    nm, dlen); exit(-1); 
+	  }
+	}
+	msgs[MONI]++;    msgBytes[MONI] += len;
+      } else if(rmt == DOM_SLOW_CONTROL && rmst == DSC_WRITE_ONE_DAC) {
+	msgs[SETDAC]++;  msgBytes[SETDAC] += len;
+      } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_DATA) {
+	msgs[HITS]++;    msgBytes[HITS] += len;
+	if(dlen && savehits) {
+	  int nh = write(hitsfd, msgReply->data, dlen);
+	  if(nh != dlen) { 
+	    fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
+		    nh, dlen); 
+	    exit(-1); 
+	  }
+	}
+      } else if(rmt == DATA_ACCESS && rmst == DATA_ACC_GET_SN_DATA) {
+	msgs[SN]++;      msgBytes[SN] += len;
+	if(dlen) {
+	  int ns = write(snfd, msgReply->data, dlen);
+	  if(ns != dlen) { 
+	    fprintf(stderr,"Short write (%d of %d bytes) to hit data stream.\n",
+		    ns, dlen); 
+	    exit(-1);
+	  }
+	}
+      } else {
+	fprintf(stderr,"Unknown message mt=%d mst=%d len=%d\n", rmt, rmst, dlen);
+      }
+      if(!stuffit) break;
+    } /* read cycle */
+
+    if(rdfailed >= MAXRDFAILED) {
+      fprintf(stderr,"ERROR: Had at least %d failed reads in a row.  DOM died?\n", rdfailed);
+      exit(-1);
     }
-  } /* if(dopoll) */
+
+    /* Check for done, show rates, etc. */
+    struct timeval tnow;
+    gettimeofday(&tnow, NULL);
+    unsigned long long dt = (tnow.tv_sec - tstart.tv_sec)*1000000 
+      + (tnow.tv_usec - tstart.tv_usec);
+    int dtsec = tnow.tv_sec - tstart.tv_sec;
+    int dtusec = tnow.tv_usec - tstart.tv_usec;
+    if(dtusec < 0) {
+      dtusec += 1000000;
+      dtsec --;
+    }
+    if(reportableDelta(dtsec, lastdtsec)) {
+      double totBytes = (double) msgBytes[ECHO] + (double) msgBytes[MONI] + 
+	(double) msgBytes[HITS] + (double) msgBytes[SETDAC] + (double) msgBytes[SN];
+      double echoDataRate = totBytes / (((double) dtsec)*1E3);
+      fprintf(stderr,"%d.%06ds: %lu echo, %lu moni, %lu hit, %lu dac, %lu sn, "
+	      "%2.2fMB, %2.2f kB/sec", 
+	      dtsec, dtusec, msgs[ECHO], msgs[MONI], msgs[HITS], msgs[SETDAC], msgs[SN],
+	      totBytes/1E6, echoDataRate);
+      fprintf(stderr,"\n");
+    }
+    
+    if(dohitbuf && dtsec >= secDuration && ! done) {
+      if(endRun(filep, bufsiz, dopulser)) {
+	fprintf(stderr,"endRun failed.\n");
+	exit(-1);
+      }
+      if(lcOn) {
+	if(turnOffLC(filep, bufsiz)) {
+	  fprintf(stderr,"ERROR: turnOffLC failed.\n");
+	} else {
+	  lcOn = 0;
+	}
+      }
+      if(snOn) {
+	if(turnOffSN(filep, bufsiz)) {
+	  fprintf(stderr,"ERROR: turnOffSN failed.\n");
+	} else {
+	  snOn = 0;
+	}
+      }
+      if(moniOn) {
+	if(turnOffPeriodicMonitoring(filep, bufsiz)) {
+	  fprintf(stderr,"ERROR: turnOffPeriodicMonitoring failed.\n");
+	} else {
+	  moniOn = 0;
+	}
+      }
+      done = 1;
+    }
+    /* Turn off HV when duration is up so we can see it in 
+       monitoring stream */
+    if(dtsec >= secDuration && hvOn) {
+      if(highVoltageOff(filep, bufsiz)) { /* We'll do again @ end of loop to be sure */
+	fprintf(stderr,"ERROR: highVoltageOff failed.\n");
+      } else {
+	hvOn = 0;
+      }
+    }
+    
+    /* Add 1 sec to run length after run stop to get last monitoring, etc. events */
+    if(dtsec >= secDuration+1) {
+      fprintf(stderr,"Done (%lld usec).\n",dt);
+      break;
+    }
+    lastdtsec = dtsec;
+      
+  } /* while(dopoll) */
   
-  if(dohv) highVoltageOff(filep, bufsiz);
+  if(hvOn) {
+    highVoltageOff(filep, bufsiz);
+    hvOn = 0;
+  }
+  if(snOn && turnOffSN(filep, bufsiz)) {
+    fprintf(stderr,"turnOffSN failed.\n");
+  } else { 
+    snOn = 0; 
+  }
+  if(lcOn && turnOffLC(filep, bufsiz)) {
+    fprintf(stderr,"ERROR: turnOffLC failed.\n");
+  } else { 
+    lcOn = 0; 
+  }
+  if(moniOn && turnOffPeriodicMonitoring(filep, bufsiz)) {
+    fprintf(stderr,"ERROR: turnOffPeriodicMonitoring failed.\n");
+  } else {
+    moniOn = 0;
+  }
 
   free(dacMsg);
   free(msgReply);  
@@ -1383,12 +1363,45 @@ int highVoltageOff(int filep, int bufsiz) {
   return 0;
 }
 
-void turnOffPeriodicMonitoring(int filep, int bufsiz) {
+int turnOffPeriodicMonitoring(int filep, int bufsiz) {
   fprintf(stderr,"Turning off periodic monitoring... ");
   int r;
   if((r=domsg(filep, bufsiz, 1000, DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, "-LL", 0, 0)) != 0) {
     fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
-    exit(-1);
+    return 1;
   }
   fprintf(stderr,"OK.\n");
+  return 0;
+}
+
+int setUpTrigMode(int filep, int bufsiz, int trigMode) {
+  int r;
+  fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
+  if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
+	      (unsigned char) trigMode)) != 0) {
+    fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
+    return 1;
+  }
+  
+  unsigned char trigModeCheck = 0xFF; 
+  if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
+	      &trigModeCheck)) != 0) {
+    fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
+    return 1;
+  }
+  if(trigModeCheck != trigMode) { 
+    fprintf(stderr,"DSC_GET_TRIG_MODE failed: trigModeCheck=%d trigMode=%d\n", 
+	    trigModeCheck, trigMode);
+    return 1;
+  }
+  fprintf(stderr,"OK.\n");
+  return 0;
+}
+
+int reportableDelta(int dtsec, int lastdtsec) {
+  return dtsec != lastdtsec && dtsec != 0
+    && ((int)dtsec <= 10 /* Periodic criteria */
+	|| !(((dtsec)%10) && dtsec<100)
+	|| !(((dtsec)%100)&& dtsec<1000)
+	||  !((dtsec)%1000));
 }

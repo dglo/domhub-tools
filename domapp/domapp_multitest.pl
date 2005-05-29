@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.26 2005-05-28 13:51:38 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.27 2005-05-29 20:42:48 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -11,9 +11,10 @@ use Getopt::Long;
 sub testDOM;     sub loadFPGA;     sub docmd;      sub hadError; sub filly;
 sub hadWarning;  sub printWarning; sub printc;     sub delim;
 sub endTests;    sub usage;        sub logresults; sub collectDoms;
+sub haveLogs;
 
-
-$SIG{INT} = $SIG{KILL} = sub { print "Got signal, bye.\n"; exit; };
+sub sigged { die "Got signal, bye bye.\n"; }
+$SIG{INT} = $SIG{KILL} = \&sigged;
     
 my $failstart = "\n\nFAILURE ------------------------------------------------\n";
 my $failend   =     "--------------------------------------------------------\n";
@@ -23,7 +24,7 @@ my $speThreshDAC = 9;
 my $speThresh    = 600;
 my $pulserDAC    = 11;
 my $pulserAmp    = 500;
-my $defaultDACS  = "-S0,850 -S1,2097 -S2,600 -S3,2048 "
+my $defaultDACs  = "-S0,850 -S1,2097 -S2,600 -S3,2048 "
     .              "-S4,850 -S5,2097 -S6,600 -S7,1925 "
     .              "-S10,700 -S13,800 -S14,1023 -S15,1023";
 my $dat          = "/usr/local/bin/domapptest";
@@ -55,6 +56,8 @@ if(defined $image) {
     mydie "Can't find domapp image (\"$image\")!  $O -h for help.\n"
 	unless -f $image;
 }
+
+die "Log files exist; rm dmt????.log first.\n" if haveLogs;
 
 my %card;
 my %pair;
@@ -139,12 +142,13 @@ sub testDOM {
     }
 
     $nt++; $fail++ unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
+    $nt++; $fail++ unless SNCountsOnly($dom);
+    $nt++; $fail++ unless SNCountsAndHits($dom);
 
     $nt++; $fail++ unless collectCPUTrigDataTestNoLC($dom);
     $nt++; $fail++ unless collectDiscTrigDataCompressedForced($dom);
     $nt++; $fail++ unless collectDiscTrigDataCompressedPulser($dom);
     $nt++; $fail++ unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
-    $nt++; $fail++ unless SNTest($dom);
     $nt++; $fail++ unless LCMoniTest($dom);
     $nt++; $fail++ unless shortEchoTest($dom);
     printc("Testing variable heartbeat/pulser rate:  \n");
@@ -174,7 +178,24 @@ sub testHash {
     }
 }
 
-sub SNTest {
+sub SNCountsOnly {
+    my $dom = shift; die unless defined $dom;
+    printc "Fetching SN data, no hit readout... ";
+    my $snfile = "SNCounts_$dom.sn";
+    my $cmd = "$dat $defaultDACs -d 4 -p -P 500 -K 1,0,6400,$snfile -T 2 $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result =~ /ERROR/) {
+	return logresults("Had ERROR in domapptest output:\n$result\n");
+    } 
+    if($result !~ /Done \((\d+) usec\)\./) {
+        return logresults("ERROR: Did not find terminator string from "
+			. "domapptest:\n$result\n");
+    }
+    print "OK.\n";
+    return 1;
+}
+
+sub SNCountsAndHits {
     my $dom = shift; die unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
@@ -638,10 +659,15 @@ sub docmd {
     my $cmd = shift; die unless defined $cmd;
     print "$cmd\n" if defined $showcmds;
     my $outfile = ".dm$$.".time;
+    my $ret;
     if(defined $showcmds) {
-	system "$cmd 2>&1 | tee $outfile";
+	$ret = system "$cmd 2>&1 | tee $outfile";
     } else {
-	system "$cmd &> $outfile";
+	$ret = system "$cmd &> $outfile";
+    }
+    if($ret & 127) {
+	print "Got signal in subprocess ($ret)!\n";
+	exit(1);
     }
     my $rez = `cat $outfile`;
     unlink $outfile; 
@@ -714,18 +740,31 @@ sub doShortHitCollection {
 	$runArg = "-B";
 	$pulsrateArg = (defined $pulsrate) ? "-P $pulsrate" : "";
     }
-    my $cmd       = "$dat -d $dur $defaultDACS -S$speThreshDAC,$thresh "
+    my $cmd       = "$dat -d $dur $defaultDACs -S$speThreshDAC,$thresh "
 	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg $snArg "
 	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type $runArg -i $engFile $lcstr $dom 2>&1";
 
     my $result    = docmd $cmd;
-    my $moni      = `decodemoni -v $monFile`; chomp $moni;
-    if($moni eq "") {
-	my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
-	my $result     = docmd $getMoniCmd;
-	$moni = "[original EMPTY -- following was fetched from domapp a second time around:]\n"
-	    .   $result
-	    .   `decodemoni -v last.moni`;
+
+    # Tenaciously fetch monitoring stream
+    my $moni;
+    if(! -f $monFile) {
+	$moni = "ERROR: Monitoring file $monFile doesn't exist; DOM hosed?\n";
+    } else {
+	$moni      = `decodemoni -v $monFile 2>&1`; chomp $moni;
+	if($moni eq "") {
+	    my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
+	    my $result     = docmd $getMoniCmd;
+	    if(! -f "last.moni") {
+		$moni = "ERROR: Original monitoring stream is empty and "
+		    .   "secondary stream is missing; DOM hosed?\n";
+	    } else {
+		$moni = "[original EMPTY -- following was fetched "
+		    .   "from domapp a second time around:]\n"
+		    .   $result
+		    .   `decodemoni -v last.moni`;
+	    }
+	}
     }
 
     my $summary = 
@@ -951,6 +990,11 @@ bare DOM mainboard are given.
 
 EOF
 ;
+}
+
+sub haveLogs {
+    my @logs = <dmt????.log>;
+    return (@logs>0)?1:0;
 }
 
 __END__

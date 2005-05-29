@@ -8,6 +8,7 @@
 #define __DOMAPP_H__
 
 #include <stdarg.h>
+#include <sys/poll.h>
 
 #define UBYTE unsigned char
 
@@ -128,70 +129,59 @@ enum Type {
         TEST_MANAGER
 };
 
-int getMsg(int filep, DOMMSG * m, int bufsiz, int maxtries) {
-  /* Handles possible disassembly of messages on dom side in case new dom-loader is 
-     not installed on the DOM */
-
+int getMsg(int filep, DOMMSG * m, int bufsiz, int maxpoll) {
+  /* Return message length if successful; 
+     return 0 if timeout 
+     return -1 if error 
+  */
   char * buf = malloc(bufsiz);
   if(buf == NULL) {
     printf("getMsg: Can't get temporary buffer of %d bytes.\n", bufsiz);
-    return 0;
+    return -1;
   }
 
   /* Do first read to get message length */
+  struct pollfd fds;
+  fds.fd     = filep; 
+  fds.events = POLLIN;
+  int ret    = poll(&fds, 1, maxpoll);
+  if(ret < 0 || (! (fds.revents & POLLIN))) { free(buf); return 0; }
+
   int nr = read(filep, buf, bufsiz);
-  if(nr < MSG_HDR_LEN) { 
-    //fprintf(stderr, "getMsg: Short read (%d bytes) of header!\n", nr);
+  if(nr < MSG_HDR_LEN) {
+    fprintf(stderr, "getMsg: Short read (%d bytes) of header!\n", nr);
     free(buf); 
-    return nr;
+    return -1;
   }
 
-  int databytes = nr-MSG_HDR_LEN; // >= 0
-
   /* Have at least 8 bytes now */
+  int databytes = nr-MSG_HDR_LEN;
   memcpy(&(m->head.h[0]), buf, MSG_HDR_LEN);
-
   int datalen = msgDataLen(m);
   if(datalen > bufsiz) {
-    fprintf(stderr,"%d byte message too large, exceeds max=%d bytes.\nHeader=(", datalen, bufsiz);
+    fprintf(stderr,"%d byte message too large, exceeds max=%d bytes.\n"
+	    "Header=(", datalen, bufsiz);
     int i;
-    for(i=0;i<8;i++) fprintf(stderr, "%02x ",(int)m->head.h[i]);
-    for(i=0;i<8;i++) fprintf(stderr," %c",m->head.h[i]>33&&m->head.h[i]<126?m->head.h[i]:'X');
+    for(i=0;i<8;i++) 
+      fprintf(stderr, "%02x ",(int)m->head.h[i]);
+    for(i=0;i<8;i++) 
+      fprintf(stderr," %c",m->head.h[i]>33&&m->head.h[i]<126?m->head.h[i]:'X');
     fprintf(stderr,").\n");
     free(buf);
-    exit(-1); /* Be drastic for now */
+    return -1;
+  }
+
+  int lentarget = databytes+MSG_HDR_LEN;
+  if(nr != lentarget) {
+    fprintf(stderr,"getMsg: Odd read length, wanted %d, got %d.\n", lentarget, nr);
+    free(buf);
+    return -1;
   }
 
   if(databytes > 0)
     memcpy(m->data, buf+MSG_HDR_LEN, databytes);
-
-  int numtries = 0;
-  /* Get rest of message */
-  while(databytes < datalen) {
-    nr = read(filep, buf, bufsiz);
-    if(nr == -1 && errno == EAGAIN) {
-      usleep(1000);
-      if(maxtries && numtries++ > maxtries) {
-	return -1; /* Catch timeout at higher level */
-      }
-      continue;
-    } else if(nr < 1) {
-      fprintf(stderr,"Short or erroneous read in middle of message! nr=%d errno=%d.\n", nr, errno);
-      free(buf);
-      exit(-1);
-    } 
-    if(databytes+nr > MAX_DATA_LEN) {
-      fprintf(stderr,"Message overflow!  databytes=%d nr=%d MAX_DATA_LEN=%d\n", 
-	     databytes, nr, MAX_DATA_LEN);
-      free(buf);
-      exit(-1);
-    }
-    numtries = 0;
-    memcpy(m->data+databytes, buf, nr);
-    databytes += nr;
-  }
   free(buf);
-  return databytes+MSG_HDR_LEN;
+  return nr;
 }
 
 void zeroMsg(DOMMSG *m) { bzero(m->head.h, MSG_HDR_LEN); }
@@ -209,26 +199,33 @@ void setMsgStatus(DOMMSG *m, int status) { m->head.hd.status = status; }
 
 void setMsgID(DOMMSG *m, int id) { m->head.hd.msgID = id; }
 
-int sendMsg(int filep, DOMMSG * m) {
-  /* datalen == length of data portion of message; can be 0 */
+int sendMsg(int filep, DOMMSG * m, int maxpoll) {
+  /* Send message on filep.  Return number of bytes written, or 0 if timeout,
+     or -1 if error */
+
+  /* datalen == length of data portion of message; can be 0; */     
   int datalen = msgDataLen(m);
-  int msglen = datalen + MSG_HDR_LEN;
+  int msglen  = datalen + MSG_HDR_LEN;
+  struct pollfd fds;
+  fds.fd      = filep;
+  fds.events  = POLLOUT;
+
+  int ret     = poll(&fds, 1, maxpoll);
+  if(ret < 0) return 0;
+  if(!fds.revents & POLLOUT) return 0;
+
   char * buf = malloc(msglen);
-  if(buf == NULL) return -1;
+  if(buf == NULL) {
+    fprintf(stderr,"sendMsg: malloc failed.\n");
+    return -1;
+  }
   memcpy(buf, &(m->head.h[0]), MSG_HDR_LEN);
   memcpy(buf+MSG_HDR_LEN, m->data, datalen);
-  /* send it down */
-#ifdef DEBUGSENDMSG
-  int i;
-  fprintf(stderr,"MSG "); 
-  for(i=0; i<msglen; i++) {
-    fprintf(stderr,"0x%02x ", buf[i]);
-  } 
-  fprintf(stderr,"\n");
-#endif
   int nw = write(filep, buf, msglen);
-  //fprintf(stderr,"datalen=%d hdrlen=%d msglen=%d nw=%d", datalen, MSG_HDR_LEN, msglen, nw);
-  /* deallocate */
+  if(nw != MSG_HDR_LEN+datalen) {
+    fprintf(stderr,"sendMsg: bad write length: %d != %d.\n", nw, MSG_HDR_LEN+datalen);
+    return -1;
+  }
   free(buf);
   return nw;
 }
@@ -544,22 +541,21 @@ DOMMSG * newSetDataCompressionMsg(int toggle) {
 
 int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout) {
   int isend;
-  while((isend = sendMsg(filep, s)) < 0) usleep(1000);
-  /* Get first reply */
-  int i, len;
-  for(i=0; !timeout || i<timeout; i++) {
-    len = getMsg(filep, r, bufsiz, 1000);
-    if(len == -1) { // EAGAIN
-      usleep(1000);
-    } else if(len < MSG_HDR_LEN) {
-      fprintf(stderr,"sendAndReceive: Short read (%d bytes) on message reply.\n", len);
-      return 1;
-    } else {
-      break;
-    } /* length ok */
+  isend = sendMsg(filep, s, timeout);
+  if(isend < msgDataLen(s)+MSG_HDR_LEN) {
+    fprintf(stderr,"sendAndReceive: Timeout or error (%d) sending message!!!\n", isend); 
+    return 1;
   }
-  if(len < MSG_HDR_LEN) {
-    fprintf(stderr,"getMsg: Timeout reading reply!!!\n");
+  /* Get reply */
+  int len = getMsg(filep, r, bufsiz, timeout);
+  if(len == 0) { // EAGAIN
+    fprintf(stderr,"sendAndReceive: timeout from getMsg.\n");
+    return 1;
+  } else if(len < 0) {
+    fprintf(stderr,"sendAndReceive: error %d from getMsg.\n", len);
+    return 1;
+  } else if(len < MSG_HDR_LEN) {
+    fprintf(stderr,"sendAndReceive: Short read (%d bytes) on message reply.\n", len);
     return 1;
   }
   if(r->head.hd.status != 1) {
