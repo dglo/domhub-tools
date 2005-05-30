@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.18 2005-05-29 20:42:48 jacobsen Exp $
+   $Id: domapptest.c,v 1.19 2005-05-30 14:07:58 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -432,7 +432,7 @@ int main(int argc, char *argv[]) {
 
   if(getDOMID) {
     char ID[MAX_DATA_LEN];
-    if((r=domsg(filep, bufsiz, 1000, MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
+    if((r=domsg(filep, bufsiz, 10000, MESSAGE_HANDLER, MSGHAND_GET_DOM_ID,
                 "+X", ID)) != 0) {
       fprintf(stderr,"MSGHAND_GET_DOM_ID failed: %d\n", r);
       exit(-1);
@@ -442,7 +442,7 @@ int main(int argc, char *argv[]) {
 
   if(dofbid) {
     char fbid[MAX_DATA_LEN];
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
                 DATA_ACCESS, DATA_ACC_GET_FB_SERIAL,
                 "+X", fbid)) != 0) {
       fprintf(stderr,"DATA_ACC_GET_FB_SERIAL failed: %d\n", r);
@@ -453,7 +453,7 @@ int main(int argc, char *argv[]) {
 
   if(askversion) {
     char version[MAX_DATA_LEN];
-    if((r=domsg(filep, bufsiz, 1000, 
+    if((r=domsg(filep, bufsiz, 10000, 
 		MESSAGE_HANDLER, MSGHAND_GET_DOMAPP_RELEASE, 
 		"+X", version)) != 0) {
       fprintf(stderr,"MSGHAND_GET_DOMAPP_RELEASE failed: %d\n", r); 
@@ -464,7 +464,7 @@ int main(int argc, char *argv[]) {
 
   if(doCustom) {
     fprintf(stderr,"Sending message type %d, subtype %d... ",custType, custSubType);
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
                 custType, custSubType, "")) != 0) {
       fprintf(stderr,"\ncustom message failed: %d\n", r); 
       exit(-1);
@@ -475,7 +475,7 @@ int main(int argc, char *argv[]) {
   if(hwival || cfival) {
     fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", 
 	    hwival, cfival);
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
                 DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
 		"-LL", (unsigned long) hwival, (unsigned long) cfival)) != 0) {
       fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
@@ -491,7 +491,7 @@ int main(int argc, char *argv[]) {
       exit(usage());
     }
     fprintf(stderr,"Selecting ATWD %d... ", whichATWD);
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SELECT_ATWD, "-C",
+    if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_SELECT_ATWD, "-C",
 		(unsigned char) whichATWD)) != 0) {
       fprintf(stderr,"DSC_SELECT_ATWD failed: %d\n", r);
       exit(-1);
@@ -507,7 +507,7 @@ int main(int argc, char *argv[]) {
 	   nsamps[3], sampwids[3], nadc);
     unsigned char mask0, mask1;
     getMasks(&mask0, &mask1, nsamps, sampwids);
-    if((r=domsg(filep, bufsiz, 1000, DATA_ACCESS, DATA_ACC_SET_ENG_FMT, "-CCC",
+    if((r=domsg(filep, bufsiz, 10000, DATA_ACCESS, DATA_ACC_SET_ENG_FMT, "-CCC",
 		(unsigned char) (nadc&0xFF), mask0, mask1)) != 0) {
       fprintf(stderr,"DATA_ACC_SET_ENG_FMT failed: %d\n", r);
       exit(-1);
@@ -519,7 +519,7 @@ int main(int argc, char *argv[]) {
   int idac;
   for(idac=0; idac<ndacs; idac++) {
     fprintf(stderr,"Setting DAC %d to %d... ", dacs[idac], dacvals[idac]);
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_WRITE_ONE_DAC, "-CCS", 
+    if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_WRITE_ONE_DAC, "-CCS", 
 		dacs[idac], 0, dacvals[idac])) != 0) {
       fprintf(stderr,"DSC_WRITE_ONE_DAC failed: %d\n", r);
       exit(-1);
@@ -973,7 +973,7 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq) {
 int endRun(int filep, int bufsiz, int dopulser) {
   int r;
 
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
     return 1;
@@ -981,7 +981,7 @@ int endRun(int filep, int bufsiz, int dopulser) {
 
   if(dopulser) {
     fprintf(stderr,"Turning off front-end pulser... ");
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
+    if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
       fprintf(stderr,"DSC_SET_PULSER_OFF failed: %d\n", r);
       exit(-1);
     }
@@ -993,7 +993,7 @@ int endRun(int filep, int bufsiz, int dopulser) {
 
 int clearLC(int filep, int bufsiz) {
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", 0)) != 0) {
     fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
     return 1;
@@ -1003,7 +1003,7 @@ int clearLC(int filep, int bufsiz) {
 
 int setUpSN(int filep, int bufsiz, int snmode, int sndeadt) {
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_ENABLE_SN, "-LC", sndeadt, snmode)) != 0) {
     fprintf(stderr,"DSC_ENABLE_SN failed: %d\n", r);
     return 1;
@@ -1013,7 +1013,7 @@ int setUpSN(int filep, int bufsiz, int snmode, int sndeadt) {
 
 int turnOffSN(int filep, int bufsiz) {
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_DISABLE_SN, "")) != 0) {
     fprintf(stderr,"DSC_ENABLE_SN failed: %d\n", r);
     return 1;
@@ -1024,13 +1024,13 @@ int turnOffSN(int filep, int bufsiz) {
 int setUpLC(int filep, int bufsiz, int mode,
 	    int pre_ns, int post_ns) {
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_WINDOW, "-LL", 
 	      pre_ns, post_ns)) != 0) {
     fprintf(stderr,"DSC_SET_LOCAL_COIN_WINDOW failed: %d\n", r);
     return 1;
   }
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", mode)) != 0) {
     fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
     return 1;
@@ -1040,7 +1040,7 @@ int setUpLC(int filep, int bufsiz, int mode,
 
 int turnOffLC(int filep, int bufsiz) {
    int r;
-   if((r=domsg(filep, bufsiz, 1000,
+   if((r=domsg(filep, bufsiz, 10000,
 	       DOM_SLOW_CONTROL, DSC_SET_LOCAL_COIN_MODE, "-C", 0)) != 0) {
      fprintf(stderr,"DSC_SET_LOCAL_COIN_MODE failed: %d\n", r);
      return 1;
@@ -1052,7 +1052,7 @@ int beginFBRun(int filep, int bufsiz, unsigned short bright,
 	       unsigned short win, short delay, unsigned short mask, unsigned short rate) {
   int r;
   fprintf(stderr,"Starting flasher run... ");
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_FB_RUN, "-SSSSS",
 	      bright, win, delay, mask, rate)) != 0) {
     fprintf(stderr,"EXPCONTROL_BEGIN_FB_RUN failed: %d\n", r);
@@ -1067,7 +1067,7 @@ int beginRun(int filep, int bufsiz, int dopulser) {
 
   if(dopulser) {
     fprintf(stderr,"Turning on front-end pulser... ");
-    if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_PULSER_ON, ""))) {
+    if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_SET_PULSER_ON, ""))) {
       fprintf(stderr,"DSC_SET_PULSER_ON failed: %d\n", r);
       exit(-1);
     }
@@ -1075,7 +1075,7 @@ int beginRun(int filep, int bufsiz, int dopulser) {
   }
 
   fprintf(stderr,"Starting run... ");
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_BEGIN_RUN failed: %d\n", r);
     return 1;
@@ -1094,14 +1094,14 @@ int testPedestalCollection(int filep, int bufsiz) {
   int r;
   int itrial; for(itrial=0; itrial<100; itrial++) {
     fprintf(stderr,"Ped. run %d\n", itrial);
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
                 EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
                 targetATWD0, targetATWD1, targetFADC)) != 0) {
       fprintf(stderr,"EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
       return 1;
     }
 
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
                 EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
                 &nped0, &nped1, &nadc)) != 0) {
       fprintf(stderr,"EXPCONTROL_GET_NUM_PEDESTALS failed: %d.\n", r);
@@ -1126,14 +1126,14 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   unsigned long nped0, nped1, nadc;
 
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_DO_PEDESTAL_COLLECTION, "-LLL",
 	      targetATWD0, targetATWD1, targetFADC)) != 0) {
     fprintf(stderr,"EXPCONTROL_DO_PEDESTAL_COLLECTION failed: %d\n", r);
     return 1;
   }
 
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_GET_NUM_PEDESTALS, "+LLL",
 	      &nped0, &nped1, &nadc)) != 0) {
     fprintf(stderr,"EXPCONTROL_GET_NUM_PEDESTALS failed: %d.\n", r);
@@ -1155,7 +1155,7 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   DOMMSG * msgReply = (DOMMSG *) malloc(sizeof(DOMMSG));
   if(msgReply == NULL) { free(pedAvgs); return 1; }
 
-  if(sendAndReceive(filep, bufsiz, pedAvgs, msgReply, 100)) {
+  if(sendAndReceive(filep, bufsiz, pedAvgs, msgReply, 10000)) {
     fprintf(stderr,"Send-and-receive getPedestalAverages failed.\n");
     free(pedAvgs);
     return 1;
@@ -1191,7 +1191,7 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
 
   /* Set baseline (RoadGrader) thresholds */
   if(dothresh) {
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
 		DATA_ACCESS, DATA_ACC_SET_BASELINE_THRESHOLD, "-S SSSS SSSS",
 		fadc_thresh,
 		atwdthresh[0], atwdthresh[1], atwdthresh[2], atwdthresh[3],
@@ -1201,7 +1201,7 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
     }
   }
 
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      DATA_ACCESS, DATA_ACC_GET_BASELINE_THRESHOLD, "+S SSSS SSSS",
 	      &fadc_thresh,
 	      &atwdthresh[0], &atwdthresh[1], &atwdthresh[2], &atwdthresh[3],
@@ -1230,7 +1230,7 @@ int getRandInt(int min, int max) {
 int setPulserRate(int filep, int bufsiz, int rate) {
   int r;
   fprintf(stderr,"Setting pulser rate to %d Hz... ", rate);
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_SET_PULSER_RATE, "-S", (unsigned short) rate)) != 0) {
     fprintf(stderr,"DSC_SET_PULSER_RATE failed: %d\n", r);
     return 1;
@@ -1243,13 +1243,13 @@ int setPulserRate(int filep, int bufsiz, int rate) {
 int setCompression(int filep, int bufsiz, int mode) {
   int r;
   fprintf(stderr,"Setting DOM Data compression type to %d... ", mode);
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      DATA_ACCESS, DATA_ACC_SET_COMP_MODE, "-C", (unsigned char) mode)) != 0) {
     fprintf(stderr, "DATA_ACC_SET_COMP_MODE failed: %d\n", r);
     return 1;
   }
   unsigned char mget;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DATA_ACCESS, DATA_ACC_GET_COMP_MODE, "+C", &mget)) != 0) {
     fprintf(stderr, "DATA_ACC_GET_COMP_MODE failed: %d\n", r);
     return 1;
@@ -1266,13 +1266,13 @@ int setCompression(int filep, int bufsiz, int mode) {
 int setDataFormat(int filep, int bufsiz, int fmt) {
   int r;
   fprintf(stderr,"Setting DOM Data format to %d... ", fmt);
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DATA_ACCESS, DATA_ACC_SET_DATA_FORMAT, "-C", (unsigned char) fmt)) != 0) {
     fprintf(stderr, "DATA_ACC_SET_DATA_FORMAT failed: %d\n", r);
     return 1;
   }
   unsigned char mfmt;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DATA_ACCESS, DATA_ACC_GET_DATA_FORMAT, "+C", &mfmt)) != 0) {
     fprintf(stderr, "DATA_ACC_GET_DATA_FORMAT failed: %d\n", r);
     return 1;
@@ -1298,14 +1298,14 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
     return 1;
   }
   fprintf(stderr,"Enabling high voltage...\n");
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
 	      DOM_SLOW_CONTROL, DSC_ENABLE_PMT_HV, "")) != 0) {
     fprintf(stderr,"DSC_ENABLE_PMT_HV failed: %d\n", r);
     return 1;
   }
 
   fprintf(stderr,"Setting high voltage...\n");
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_SET_PMT_HV, "-S", hvdac)) != 0) {
     fprintf(stderr,"DSC_SET_PMT_HV(%d DAC units) failed: %d\n", hvdac, r);
     return 1;
@@ -1315,7 +1315,7 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
   int ok=0, isec;
   unsigned short qadc,qdac,junk;
   for(isec=0;isec<MAXTRIALS;isec++) {
-    if((r=domsg(filep, bufsiz, 1000,
+    if((r=domsg(filep, bufsiz, 10000,
 		DOM_SLOW_CONTROL, DSC_QUERY_PMT_HV, "+SSS", &junk, &qadc, &qdac)) != 0) {
       fprintf(stderr,"DSC_QUERY_PMT_HV failed: %d\n", r);
       highVoltageOff(filep, bufsiz);
@@ -1350,12 +1350,12 @@ int setHighVoltage(int filep, int bufsiz, int hvdac) {
 int highVoltageOff(int filep, int bufsiz) {
   fprintf(stderr,"Turning off high voltage.\n");
   int r;
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_SET_PMT_HV, "-S", (unsigned short) 0)) != 0) {
     fprintf(stderr,"DSC_SET_PMT_HV(0) failed: %d\n", r);
     return 1;
   }
-  if((r=domsg(filep, bufsiz, 1000,
+  if((r=domsg(filep, bufsiz, 10000,
               DOM_SLOW_CONTROL, DSC_DISABLE_PMT_HV, "")) != 0) {
     fprintf(stderr,"DSC_DISABLE_PMT_HV failed: %d\n", r);
     return 1;
@@ -1366,7 +1366,7 @@ int highVoltageOff(int filep, int bufsiz) {
 int turnOffPeriodicMonitoring(int filep, int bufsiz) {
   fprintf(stderr,"Turning off periodic monitoring... ");
   int r;
-  if((r=domsg(filep, bufsiz, 1000, DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, "-LL", 0, 0)) != 0) {
+  if((r=domsg(filep, bufsiz, 10000, DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, "-LL", 0, 0)) != 0) {
     fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
     return 1;
   }
@@ -1377,14 +1377,14 @@ int turnOffPeriodicMonitoring(int filep, int bufsiz) {
 int setUpTrigMode(int filep, int bufsiz, int trigMode) {
   int r;
   fprintf(stderr,"Setting trigger mode to %d... ", trigMode);
-  if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
+  if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_SET_TRIG_MODE, "-C", 
 	      (unsigned char) trigMode)) != 0) {
     fprintf(stderr,"DSC_SET_TRIG_MODE failed: %d\n", r);
     return 1;
   }
   
   unsigned char trigModeCheck = 0xFF; 
-  if((r=domsg(filep, bufsiz, 1000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
+  if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_GET_TRIG_MODE, "+C",
 	      &trigModeCheck)) != 0) {
     fprintf(stderr,"DSC_GET_TRIG_MODE failed: %d\n", r);
     return 1;
