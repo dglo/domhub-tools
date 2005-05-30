@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.27 2005-05-29 20:42:48 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.28 2005-05-30 14:11:22 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -149,7 +149,9 @@ sub testDOM {
     $nt++; $fail++ unless collectDiscTrigDataCompressedForced($dom);
     $nt++; $fail++ unless collectDiscTrigDataCompressedPulser($dom);
     $nt++; $fail++ unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
-    $nt++; $fail++ unless LCMoniTest($dom);
+    $nt++; $fail++ unless LCMoniTest($dom, 1);
+    $nt++; $fail++ unless LCMoniTest($dom, 2);
+    $nt++; $fail++ unless LCMoniTest($dom, 3);
     $nt++; $fail++ unless shortEchoTest($dom);
     printc("Testing variable heartbeat/pulser rate:  \n");
     $nt++; $fail++ unless varyHeartbeatRateTestNoLC($dom);  
@@ -411,59 +413,55 @@ sub shortEchoTest {
 }
 
 sub LCMoniTest {
-    my $dom = shift;
+    my $dom = shift; die unless defined $dom;
+    my $mode = shift; die unless defined $mode;
     printc "Testing moni. reporting of LC state chgs...\n";
     my $win0 = 100;
     my $win1 = 200;
-    foreach my $mode(1..3) {
-	my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
-	printc "Mode $mode: ";
-	my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
-	my $result = docmd $cmd;
-	if($result !~ /Done \((\d+) usec\)\./) {
-	    return logresults("Test of monitoring of LC state changes failed:\n".
-			      "Command: $cmd\n".
-			      "Result:\n$result\n\n");
-	}
-
-	my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
-	# print @dmtext;
-	my $gotwin = 0;
-	my $gotmode = 0;
-	for(@dmtext) {
-	    if(hadError $_) {
-		return logresults("Test of monitoring of LC state changes failed:\n"
-				  ."Had error or warning in monitoring stream!\n".$_);
-	    }
-	    printWarning($_, $moniFile) if hadWarning $_;
-# STATE CHANGE: LC WIN <- (100, 100)
-	    if(/LC WIN <- \((\d+), (\d+)\)/) {
-		if($1 ne $win0 || $2 ne $win1) {
-		    return logresults("Window mismatch ($1 vs $win0, $2 vs $win1\n"
-				      ."Line: $_\nFile: $moniFile\n");
-		} else {
-		    $gotwin = 1;
-		}
-	    }
-	    if(/LC MODE <- (\d+)/) {
-		if($1 ne $mode)  {
-		    return logresults("Mode mismatch ($1 vs. $mode).\n".(join "\n",@dmtext));
-		} else {
-		    $gotmode = 1;
-		}
-	    }
-	}
-	if(! $gotwin) { 
-	    return logresults((join "\n", @dmtext).
-			      "Didn't get monitoring record indicating LC window change!\n");
-	} 
-	if(! $gotmode) {
-            return logresults((join "\n", @dmtext).
-			      "Didn't get monitoring record indicating LC mode change!\n");
-	}
-	my $details = $detailed?" (LC mode & window state change records looked good)":"";
-        print "OK$details.\n";
+    my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
+    printc "Mode $mode: ";
+    my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result !~ /Done \((\d+) usec\)\./) {
+	return logresults("Test of monitoring of LC state changes failed:\n".
+			  "Command: $cmd\n".
+			  "Result:\n$result\n\n");
     }
+    my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
+    # print @dmtext;
+    my $gotwin = 0;
+    my $gotmode = 0;
+    for(@dmtext) {
+	if(hadError $_) {
+	    return logresults("Test of monitoring of LC state changes failed:\n"
+			      ."Had error or warning in monitoring stream!\n".$_);
+	}
+	printWarning($_, $moniFile) if hadWarning $_;
+# STATE CHANGE: LC WIN <- (100, 100)
+	if(/LC WIN <- \((\d+), (\d+)\)/) {
+	    if($1 ne $win0 || $2 ne $win1) {
+		return logresults("Window mismatch ($1 vs $win0, $2 vs $win1\n"
+				      ."Line: $_\nFile: $moniFile\n");
+	    } else {
+		$gotwin = 1;
+	    }
+	}
+	if(/LC MODE <- (\d+)/) {
+	    if($1 eq $mode)  {
+		$gotmode = 1;
+	    }
+	}
+    }
+    if(! $gotwin) { 
+	return logresults((join "\n", @dmtext).
+			  "Didn't get monitoring record indicating LC window change!\n");
+    } 
+    if(! $gotmode) {
+	return logresults((join "\n", @dmtext).
+			  "Didn't get monitoring record indicating correct LC mode change!\n");
+    }
+    my $details = $detailed?" (LC mode & window state change records looked good)":"";
+    print "OK$details.\n";
     return 1;
 }
 
