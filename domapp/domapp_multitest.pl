@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.28 2005-05-30 14:11:22 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.29 2005-05-30 14:19:51 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -415,7 +415,7 @@ sub shortEchoTest {
 sub LCMoniTest {
     my $dom = shift; die unless defined $dom;
     my $mode = shift; die unless defined $mode;
-    printc "Testing moni. reporting of LC state chgs...\n";
+    printc "Testing moni. reporting of LC state chg $mode...\n";
     my $win0 = 100;
     my $win1 = 200;
     my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
