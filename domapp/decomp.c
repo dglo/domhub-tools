@@ -1,6 +1,11 @@
 /*
    decomp.c - jacobsen@npxdesigns.com
+
    Simple decompressor for Joshua Sopher's roadgrader format
+   Doesn't inspect the hit data really, just checks that 
+   domapp packaged it up correctly; could be built up into 
+   a full-bore reader for the decompressed format, though...
+
    May, 2005
 */
 
@@ -41,14 +46,14 @@ int main(int argc, char *argv[]) {
     int nr = read(fd, &h, sizeof(h));
     if(nr == 0) break; // EOF
     if(nr != sizeof(h)) {
-      fprintf(stderr,"Couldn't read %d bytes for block header!\n", sizeof(h));
+      fprintf(stderr,"ERROR: Couldn't read %d bytes for block header!\n", sizeof(h));
       exit(-1);
     }
     unsigned short tshi = swapShort(h.ts16);
     unsigned short len  = swapShort(h.len);
     printf("HDR len=%hu tshi=0x%02x\n", len, tshi);
     if(len > BUFS) {
-      fprintf(stderr, "Corrupt len, %d bytes > MAX(%dB).\n", len, BUFS);
+      fprintf(stderr, "ERROR: Corrupt len, %d bytes > MAX(%dB).\n", len, BUFS);
       exit(-1);
     }
     int thisBlock = len-sizeof(h);
@@ -56,7 +61,7 @@ int main(int argc, char *argv[]) {
       struct hit_hdr { unsigned long word1, word2; } hdr;
       nr = read(fd, &hdr, sizeof(hdr));
       if(nr != sizeof(hdr)) {
-	fprintf(stderr,"Couldn't read %d bytes for hit header!\n", sizeof(hdr));
+	fprintf(stderr,"ERROR: Couldn't read %d bytes for hit header!\n", sizeof(hdr));
 	exit(-1);
       }
       thisBlock -= nr;
@@ -73,7 +78,7 @@ int main(int argc, char *argv[]) {
       }
       nr = read(fd, hbuf, remain);
       if(nr != remain) {
-	fprintf(stderr, "Partial read of hit record (read %d, wanted %d)!\n", 
+	fprintf(stderr, "ERROR: Partial read of hit record (read %d, wanted %d)!\n", 
 		nr, remain);
 	exit(-1);
       }
