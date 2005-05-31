@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.29 2005-05-30 14:19:51 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.30 2005-05-31 15:13:33 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -11,7 +11,7 @@ use Getopt::Long;
 sub testDOM;     sub loadFPGA;     sub docmd;      sub hadError; sub filly;
 sub hadWarning;  sub printWarning; sub printc;     sub delim;
 sub endTests;    sub usage;        sub logresults; sub collectDoms;
-sub haveLogs;
+sub haveLogs;    sub removeLogs;
 
 sub sigged { die "Got signal, bye bye.\n"; }
 $SIG{INT} = $SIG{KILL} = \&sigged;
@@ -33,7 +33,7 @@ my $dat          = "/usr/local/bin/domapptest";
 sub mydie { die $failstart.shift().$failend; }
     
 my ($help, $image, $showcmds, $loadfpga, $detailed,
-    $dohv, $doflasher, $dolong);
+    $dohv, $doflasher, $dolong, $rmlogs);
 
 my $loops = 1;
 
@@ -46,6 +46,7 @@ GetOptions("help|h"          => \$help,
            "dohv|V"          => \$dohv,
            "dat|A=s"         => \$dat,
            "loops|N=i"       => \$loops,
+	   "rmlogs|r"        => \$rmlogs,
            "doflasher|F"     => \$doflasher) || die usage;
 
 die usage if $help;
@@ -57,7 +58,11 @@ if(defined $image) {
 	unless -f $image;
 }
 
-die "Log files exist; rm dmt????.log first.\n" if haveLogs;
+if($rmlogs) {
+    removeLogs;
+} else {
+    die "Log files exist; rm dmt????.log first, or use -r option.\n" if haveLogs;
+}
 
 my %card;
 my %pair;
@@ -832,7 +837,15 @@ sub doShortHitCollection {
     if($dataFmt == 0) {
 	$nhitsline = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "time stamp" | wc -l`;
     } elsif($dataFmt == 1) {
-	$nhitsline = `/usr/local/bin/decomp $engFile 2>&1 | grep "HIT" | wc -l`;
+	my @decompHits = `/usr/local/bin/decomp $engFile 2>&1`;
+	my @errWarn = grep /error|warning/i, @decompHits;
+	my @hitsLine = grep /HIT/, @decompHits;
+	$nhitsline = scalar @hitsLine;
+	if(scalar @errWarn > 0) {
+	    my $errWarn = join '', @errWarn;
+	    return logresults("$summary\n$errWarn\n".
+			      "(Had ERROR or WARNING in decompressed $engFile!)\n");
+	}
     } else {
 	return logresults("$summary\n(BAD DATA FORMAT!!! ($dataFmt))\n");
     }
@@ -856,7 +869,7 @@ sub doShortHitCollection {
 	}
     }
     my $SNsummary = (defined $SNDeadT) ? ", $SNbins SN timeslices, $SNcountsTotal SN counts" : "";
-    if($nhitsline =~ /^\s+(\d+)$/ && $1 > 0) {
+    if($nhitsline =~ /^\s*(\d+)$/ && $1 > 0) {
 	my $nhits = $1;
 	my $ratestr;
 	print "OK ($nhits hits$SNsummary).\n";
@@ -981,6 +994,7 @@ Options:
      -A <prog>:   Use <prog> rather than $dat
      -l <name>:   Load FPGA image <name> from flash before test
      -N <loops>:  Iterate <loops> times
+     -r:          Remove error log files before running
      -o:          Perform long duration tests
 
 If -V or -F options are not given, only tests appropriate for a
@@ -993,6 +1007,15 @@ EOF
 sub haveLogs {
     my @logs = <dmt????.log>;
     return (@logs>0)?1:0;
+}
+
+sub removeLogs {
+    my @logs = <dmt????.log>;
+    for(@logs) {
+	print "Removing $_... ";
+	unlink($_) || die("Can't remove log file $_: $!\n");
+	print "OK.\n";
+    }
 }
 
 __END__
