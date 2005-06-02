@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.31 2005-06-02 18:13:45 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.32 2005-06-02 20:31:10 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -35,7 +35,7 @@ my $speThreshDAC = 9;
 my $speThresh    = 600;
 my $pulserDAC    = 11;
 my $pulserAmp    = 500;
-my $defaultdur   = 300;
+my $defaultdur   = 10; # Does all tests at least once
 my $duration     = $defaultdur;
 my $defaultDACs  = "-S0,850 -S1,2097 -S2,600 -S3,2048 "
     .              "-S4,850 -S5,2097 -S6,600 -S7,1925 "
@@ -984,7 +984,8 @@ Options:
      -l <name>:   Load FPGA image <name> from flash before test
      -N <loops>:  Iterate <loops> times
      -r:          Remove error log files before running
-     -t <sec>:    Run for <sec> seconds (default: $defaultdur)
+     -t <sec>:    Run for <sec> seconds (min/default: run all tests
+                  sequentially, once)
      -o:          Perform long duration tests (normally skipped)
      -C:          Test only compressed data (pedestal collection, ...)
 
