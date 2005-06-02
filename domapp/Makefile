@@ -1,6 +1,6 @@
 # Makefile for domhub-tools/domapp
 # Jacobsen
-# $Id: Makefile,v 1.10 2005-05-25 05:35:38 jacobsen Exp $
+# $Id: Makefile,v 1.11 2005-06-02 18:13:31 jacobsen Exp $
 
 INSTALL_BIN = /usr/local/bin
 
@@ -27,10 +27,11 @@ clean:
 	rm -f $(BINS)
 
 install:
-	install domapp_multitest.pl $(INSTALL_BIN)
 	install domapptest          $(INSTALL_BIN)
 	install upload_domapp.pl    $(INSTALL_BIN)
 	install decomp              $(INSTALL_BIN)
 	install decodemoni          $(INSTALL_BIN)
 	install decodeeng           $(INSTALL_BIN)
 	install decodesn            $(INSTALL_BIN)
+	install domapp_multitest.pl $(INSTALL_BIN)
+	ln -f -s $(INSTALL_BIN)/domapp_multitest.pl $(INSTALL_BIN)/dmt
