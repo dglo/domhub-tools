@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.19 2005-05-30 14:07:58 jacobsen Exp $
+   $Id: domapptest.c,v 1.20 2005-06-02 18:13:45 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -51,6 +51,7 @@ int usage(void) {
 	  "    -w <sec>: Tell domapp to generate HW moni recs every <sec> seconds\n"
 	  "    -f <sec>: Tell domapp to generate config moni recs every <sec> seconds\n"
 	  "    -m <file>: Write monitoring data to <file>\n"
+	  "    -G: Reset monitoring buffer before sending other messages\n"
 	  "  Hit data:\n"
 	  "    -B Initiate triggering/data taking (do not use w/ -u option)\n"
 	  "    -i <file>: Write hit data to <file>\n"
@@ -130,6 +131,7 @@ int setDataFormat(int filep, int bufsiz, int mode);
 int turnOffPeriodicMonitoring(int filep, int bufsiz);
 int setUpTrigMode(int filep, int bufsiz, int trigMode);
 int reportableDelta(int dtsec, int lastdtsec);
+int doResetMonitoringMessage(int filep, int bufsiz);
 
 #define EMPTY  0
 #define ECHO   1
@@ -216,15 +218,16 @@ int main(int argc, char *argv[]) {
   int doCompTest = 0; 
   int dosn = 0, snmode, sndeadt, sfreq=0;
   int snOn = 0, lcOn = 0, hvOn = 0, moniOn = 0;
-
+  int doResetMoni = 0;
   while(1) {
     char c = getopt(argc, argv, 
-		    "QVovhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
+		    "QVGovhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
 		    "W:F:C:R:A:S:L:I:P:Z:X:K:u:");
     if (c == -1) break;
 
     switch(c) {
     case 'Q': getDOMID = 1; break;
+    case 'G': doResetMoni = 1; break;
     case 'o': doCompTest = 1; break;
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
@@ -352,11 +355,6 @@ int main(int argc, char *argv[]) {
 
   if(getDevFile(filename, BSIZ, argv[optind])) exit(usage());
 
-  /* Determine message frequencies */
-  if(!efreq && !mfreq && !hfreq && !dfreq && !sfreq) {
-    fprintf(stderr,"No message types specified... won't poll domapp for data.\n");
-  } 
-
   int * cyclic;
   if(dopoll) {
     cyclic = getCycle(efreq, mfreq, hfreq, dfreq, sfreq);
@@ -373,6 +371,10 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"Can't open file %s (%d:%s)\n", filename, errno, strerror(errno));
     exit(-1);
   }   
+
+  if(doResetMoni) {
+    if(doResetMonitoringMessage(filep, bufsiz)) exit(-1);
+  }
 
   if(doCompTest) {
     if(testPedestalCollection(filep, bufsiz)) exit(-1);
@@ -597,7 +599,7 @@ int main(int argc, char *argv[]) {
 
   struct timeval lastTWrite, lastTRead;
 
-  fprintf(stderr,"Entering periodic data collection loop...\n");
+  if(dopoll) fprintf(stderr,"Entering periodic data collection loop...\n");
   /* Messaging loop */
   int icyc = 0;
   int done = 0;
@@ -1368,6 +1370,17 @@ int turnOffPeriodicMonitoring(int filep, int bufsiz) {
   int r;
   if((r=domsg(filep, bufsiz, 10000, DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, "-LL", 0, 0)) != 0) {
     fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
+    return 1;
+  }
+  fprintf(stderr,"OK.\n");
+  return 0;
+}
+
+int doResetMonitoringMessage(int filep, int bufsiz) {
+  int r;
+  fprintf(stderr,"Resetting monitoring message buffer... ");
+  if((r=domsg(filep, bufsiz, 10000, DATA_ACCESS, DATA_ACC_RESET_MONI_BUF, "")) != 0) {
+    fprintf(stderr,"DATA_ACC_RESET_MONI_BUF failed: %d\n", r);
     return 1;
   }
   fprintf(stderr,"OK.\n");

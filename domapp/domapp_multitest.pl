@@ -2,38 +2,48 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.30 2005-05-31 15:13:33 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.31 2005-06-02 18:13:45 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
 use Getopt::Long;
 
-sub testDOM;     sub loadFPGA;     sub docmd;      sub hadError; sub filly;
-sub hadWarning;  sub printWarning; sub printc;     sub delim;
-sub endTests;    sub usage;        sub logresults; sub collectDoms;
-sub haveLogs;    sub removeLogs;
+sub testDOM;     sub loadFPGA;     sub docmd;       sub hadError;      
+sub hadWarning;  sub versionTest;  sub mydie;
+sub endTests;    sub usage;        sub collectDoms; sub getDOMIDTest;
+sub haveLogs;    sub removeLogs;   sub reapKids;    sub killKids;
+sub logmsg;      sub logOf;        sub asciiMoniTest;
+sub checkProcs;  sub filly;        sub doMultiplePedestalFetch;
+sub flasherVersionTest;            sub setHVTest;
+sub shortEchoTest;                 sub configMoniTest;
+sub configMoniTest;                sub flasherTest;
+sub collectPulserDataTestNoLC;     sub SNCountsOnly;
+sub SNCountsAndHits;               sub collectCPUTrigDataTestNoLC;
+sub collectDiscTrigDataCompressedForced;
+sub collectDiscTrigDataCompressedPulser;
+sub collectDiscTrigDataTestNoLC;
+sub LCMoniTest;
+sub varyHeartbeatRateTestNoLC;
 
-sub sigged { die "Got signal, bye bye.\n"; }
+sub sigged { reapKids; die "Got signal, bye bye.\n"; }
 $SIG{INT} = $SIG{KILL} = \&sigged;
     
-my $failstart = "\n\nFAILURE ------------------------------------------------\n";
-my $failend   =     "--------------------------------------------------------\n";
+my $logfile      = "UNASSIGNED.log";
 my $O            = filly $0;
 my $msgcols      = 50;
 my $speThreshDAC = 9;
 my $speThresh    = 600;
 my $pulserDAC    = 11;
 my $pulserAmp    = 500;
+my $defaultdur   = 300;
+my $duration     = $defaultdur;
 my $defaultDACs  = "-S0,850 -S1,2097 -S2,600 -S3,2048 "
     .              "-S4,850 -S5,2097 -S6,600 -S7,1925 "
     .              "-S10,700 -S13,800 -S14,1023 -S15,1023";
 my $dat          = "/usr/local/bin/domapptest";
     
-
-sub mydie { die $failstart.shift().$failend; }
-    
 my ($help, $image, $showcmds, $loadfpga, $detailed,
-    $dohv, $doflasher, $dolong, $rmlogs);
+    $dohv, $doflasher, $dolong, $rmlogs, $compOnly);
 
 my $loops = 1;
 
@@ -47,6 +57,8 @@ GetOptions("help|h"          => \$help,
            "dat|A=s"         => \$dat,
            "loops|N=i"       => \$loops,
 	   "rmlogs|r"        => \$rmlogs,
+	   "duration|t=i"    => \$duration,
+	   "componly|C"      => \$compOnly,
            "doflasher|F"     => \$doflasher) || die usage;
 
 die usage if $help;
@@ -54,7 +66,7 @@ die usage if $help;
 die "Can't find domapptest program $dat.\n" unless -e $dat;
 
 if(defined $image) {
-    mydie "Can't find domapp image (\"$image\")!  $O -h for help.\n"
+    die "Can't find domapp image (\"$image\")!  $O -h for help.\n"
 	unless -f $image;
 }
 
@@ -75,23 +87,103 @@ if(@doms == 0) { $doms[0] = "all"; }
 
 collectDoms;
 
-print "$O: Starting tests at '".(scalar localtime)."'\n";
+foreach my $dom (@doms) {
+    my $log = logOf($dom);
+    if(-f $log) {
+	if($rmlogs) {
+	    unlink $log || die "Can't unlink $log: $!\n";
+	} else {
+	    die "Log file for DOM $dom exists ($log); remove it or use -r option.\n";
+	}
+    }
+    print "Log for $dom is $log\n";
+}
 
-# implement serially now, but think about parallelizing later
+checkProcs;
 
-for($iter=0; $iter < $loops; $iter++) {
-    foreach my $dom (@doms) {
-	testDOM($dom);
+my ($sec,$min,$hr,$mday,$mon,$yr,$wday,$yday,$isdst) = localtime;
+$yr += 1900;
+$mon++;
+my $ts = sprintf("$yr-%02d-%02d__%02d:%02d:%02d", $mon, $mday, $hr, $min, $sec);
+my $testdir = "DMT__$ts";
+my $logfile = "DMT.out";
+
+print "Creating $testdir... ";
+mkdir $testdir || die "Can't create $testdir: $!\n";
+print "OK.\n";
+print "Creating symlink latest_dmt to $testdir... ";
+if(-e "latest_dmt") {
+    unlink "latest_dmt" || die "Can't unlink existing latest_dmt: $!\n";
+}
+symlink($testdir, "latest_dmt")
+    || die "Can't symlink $testdir"."->latest_dmt: $!.\n";
+
+chdir $testdir || die "Can't chdir $testdir: $!\n";
+
+open LOG, ">$logfile" || die "Can't open $logfile: $!\n";
+my $ofh = select(LOG); $| = 1; select $ofh;
+
+print "\nResults to appear in directory $testdir\n\n";
+
+my $kid = fork;
+mydie "Backgrounding fork failed!\n" unless defined $kid;
+if($kid) {
+    print LOG "Tests running in background.\n";
+    exit;
+}
+
+my %kidproc;
+my $haveErr=0;
+foreach my $dom (@doms) {
+    $kidproc{$dom} = fork;
+    if(!defined $kidproc{$dom}) {
+	print LOG "ERROR: fork for DOM $dom failed!\n";
+	$haveErr = 1;
+	last;
+    }
+    if($kidproc{$dom} == 0) { # I'm the kid! 
+	$logfile = logOf $dom;
+	unlink($logfile) if -e $logfile;
+	$SIG{INT} = $SIG{KILL} = sub { logmsg "signal\n"; exit; };
+	testDOM($dom, $duration);
+	exit;
     }
 }
 
-endTests($fail, $nt);
+if($haveErr) {
+    reapKids;
+    mydie "FAIL: Quitting due to failed fork.\n";
+}
+
+reapKids;
+my $haveFAIL = 0;
+foreach my $dom (@doms) {
+    my $domlog = logOf $dom;
+    my $tail = `tail -1 $domlog`; chomp $tail;
+    if($tail !~ /ending tests/) {
+	print LOG "Did not find termination string in $domlog: '$tail'.\n";
+	$haveFAIL++;
+	next;
+    }
+    print LOG "$dom ($domlog): $tail\n";
+    if($tail =~ /\s+(\d+) failures/) {
+	$haveFAIL++ unless $1 == 0;
+    } else {
+	$haveFAIL++;
+    }
+}
+
+if($haveFAIL) {
+    print LOG "$O: FAIL.\n";
+    system "touch FAIL";
+} else {
+    print LOG "$O: SUCCESS.\n";
+    system "touch SUCCESS\n";
+}
 
 exit;
 
 ######################################################################
-
-sub SKIP { printc "SKIPPING $_[0]... OK.\n"; return 1; }
 
 sub endTests { 
     if($fail) {
@@ -102,73 +194,72 @@ sub endTests {
     exit;
 }
 
+sub resetState {
+    my $dom = shift;
+    return 0 unless(softboot($dom));
+    if(defined $loadfpga) {
+        return 0 unless loadFPGA($dom, $loadfpga);
+    }
+    if(defined $image) {
+        return 0 unless(upload($dom, $image));
+    } else {
+        return 0 unless domappmode($dom);
+    }
+}
+
 sub testDOM {
 # Upload DOM software and test.  Return 1 if success, else 0.
     my $dom  = shift;
+   
+    return 0 unless resetState $dom;
 
-    $nt++; 
-    unless(softboot($dom)) {
-	$fail++; return 0;
-    }
-    
-    if(defined $loadfpga) {
-	$nt++; 
-	if(!loadFPGA($dom, $loadfpga)) {
-	    $fail++; return 0;
-	}
-    }
-
-    if(defined $image) {
-	$nt++;
-	unless(upload($dom, $image)) {
-	    $fail++; return 0;
-	}
+    # Start tests in fixed order, then randomize
+    my @tests;
+    if($compOnly) {
+	push(@tests, sub { collectDiscTrigDataCompressedForced($dom);});
+	push(@tests, sub { collectDiscTrigDataCompressedPulser($dom);});
     } else {
-	$nt++;
-	unless(domappmode($dom)) {
-	    $fail++; return 0;
-	}
+	push(@tests, sub { versionTest $dom;                         });
+	push(@tests, sub { getDOMIDTest($dom);                       });
+	push(@tests, sub { doMultiplePedestalFetch($dom)             }) if $dolong;
+	push(@tests, sub { flasherVersionTest($dom)                  }) if $doflasher;
+	push(@tests, sub { setHVTest($dom)                           }) if $dohv;
+	push(@tests, sub { shortEchoTest($dom);                      });
+	push(@tests, sub { configMoniTest($dom, "CF");               });
+	push(@tests, sub { configMoniTest($dom, "HW");               });
+	push(@tests, sub { flasherTest($dom)                         }) if $doflasher;
+	push(@tests, sub { SNCountsOnly($dom);                       });
+	push(@tests, sub { SNCountsAndHits($dom);                    });
+	push(@tests, sub { collectPulserDataTestNoLC($dom);          });
+	push(@tests, sub { collectCPUTrigDataTestNoLC($dom);         });
+	push(@tests, sub { collectDiscTrigDataCompressedForced($dom);});
+	push(@tests, sub { collectDiscTrigDataCompressedPulser($dom);});
+	push(@tests, sub { collectDiscTrigDataTestNoLC($dom);        });
+	push(@tests, sub { LCMoniTest($dom, 1);                      });
+	push(@tests, sub { LCMoniTest($dom, 2);                      });
+	push(@tests, sub { LCMoniTest($dom, 3);                      });
+	push(@tests, sub { varyHeartbeatRateTestNoLC($dom, 10);      });
+	push(@tests, sub { varyHeartbeatRateTestNoLC($dom, 100);     });
+	push(@tests, sub { varyHeartbeatRateTestNoLC($dom, 1);       });
+	# push(@tests, sub { resetState $dom;                          });
     }
-
-    $nt++; $fail++ unless versionTest($dom);
-    $nt++; $fail++ unless getDOMIDTest($dom);
-    $nt++; $fail++ unless asciiMoniTest($dom);
-
-    if($dolong) {
-	$nt++; $fail++ unless doMultiplePedestalFetch($dom);
+    # Sequential
+    my $t0 = time;
+    my $n  = 0;
+    my $nf = 0;
+    for(@tests) {
+	$n++;
+	$nf++ unless &$_;
     }
-
-    if($doflasher) {
-	$nt++; $fail++ unless flasherVersionTest($dom);
+    # Random
+    while(time-$t0 < $duration) {
+	my $itest = int(rand((scalar @tests)+1));
+	if($itest > (scalar @tests)-1) { $itest = (scalar @tests)-1; }
+	my $test = $tests[$itest];
+	$n++;
+	$nf++ unless &$test;
     }
-
-    if($dohv) {
-	$nt++; $fail++ unless setHVTest($dom);
-    }
-
-    $nt++; $fail++ unless collectPulserDataTestNoLC($dom);   # Pulser test of SPE triggers
-    $nt++; $fail++ unless SNCountsOnly($dom);
-    $nt++; $fail++ unless SNCountsAndHits($dom);
-
-    $nt++; $fail++ unless collectCPUTrigDataTestNoLC($dom);
-    $nt++; $fail++ unless collectDiscTrigDataCompressedForced($dom);
-    $nt++; $fail++ unless collectDiscTrigDataCompressedPulser($dom);
-    $nt++; $fail++ unless collectDiscTrigDataTestNoLC($dom); # Should at least get forced triggers
-    $nt++; $fail++ unless LCMoniTest($dom, 1);
-    $nt++; $fail++ unless LCMoniTest($dom, 2);
-    $nt++; $fail++ unless LCMoniTest($dom, 3);
-    $nt++; $fail++ unless shortEchoTest($dom);
-    printc("Testing variable heartbeat/pulser rate:  \n");
-    $nt++; $fail++ unless varyHeartbeatRateTestNoLC($dom);  
-    $nt++; $fail++ unless swConfigMoniTest($dom);
-    $nt++; $fail++ unless hwConfigMoniTest($dom);
-    $nt++; $fail++ if $doflasher && !flasherTest($dom);
-
-#    if(defined $dohv) {
-#	return 0 unless collectDiscTrigDataTestNoLCWithHV($dom);
-#    }
-
-    return 1;
+    logmsg("ending tests, $n total, $nf failures.\n");
 }
 
 use constant CPUTRIG  => 1;
@@ -178,32 +269,24 @@ use constant FMT_RG   => 1;
 use constant CMP_NONE => 0;
 use constant CMP_RG   => 1;
 
-sub testHash {
-    my %arg = @_;
-    foreach my $key (keys %arg) {
-	print "$key -> $arg{$key}\n";
-    }
-}
-
 sub SNCountsOnly {
-    my $dom = shift; die unless defined $dom;
-    printc "Fetching SN data, no hit readout... ";
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     my $snfile = "SNCounts_$dom.sn";
     my $cmd = "$dat $defaultDACs -d 4 -p -P 500 -K 1,0,6400,$snfile -T 2 $dom 2>&1";
     my $result = docmd $cmd;
     if($result =~ /ERROR/) {
-	return logresults("Had ERROR in domapptest output:\n$result\n");
+	return logmsg "sn-counts-only FAIL: domapptest error\n$result\n";
     } 
     if($result !~ /Done \((\d+) usec\)\./) {
-        return logresults("ERROR: Did not find terminator string from "
-			. "domapptest:\n$result\n");
+	return logmsg "sn-counts-only FAIL: domapptest error\n$result\n";
     }
-    print "OK.\n";
+    my $details = $detailed?"(domapptest finished)":"";
+    logmsg "sn-counts-only $details\n";
     return 1;
 }
 
 sub SNCountsAndHits {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "SNTrigger",
@@ -217,7 +300,7 @@ sub SNCountsAndHits {
 }
 
 sub collectCPUTrigDataTestNoLC {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom, 
 				Trig        => CPUTRIG,
 				Name        => "cpuTrigger", 
@@ -229,7 +312,7 @@ sub collectCPUTrigDataTestNoLC {
 }
 
 sub collectDiscTrigDataTestNoLC {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "discTrigger",
@@ -241,7 +324,7 @@ sub collectDiscTrigDataTestNoLC {
 }
 
 sub collectPulserDataTestNoLC {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "pulserTrigger",
@@ -253,23 +336,20 @@ sub collectPulserDataTestNoLC {
 }
 
 sub varyHeartbeatRateTestNoLC {
-    my $dom = shift; die unless defined $dom;
-    my @rates = (10, 100, 1);
-    foreach my $rate (@rates) {
-	return 0 unless doShortHitCollection(DOM         => $dom,
-					     Trig        => DISCTRIG,
-					     Name        => "heartbeat_".$rate."Hz",
-					     DoPulser    => 0,
-					     Threshold   => $speThresh,
-					     PulserRate  => $rate,
-					     Compression => CMP_NONE,
-					     Format      => FMT_ENG);
-    }
-    return 1;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    my $rate = shift; mydie("missing arg") unless defined $rate;
+    return doShortHitCollection(DOM         => $dom,
+				Trig        => DISCTRIG,
+				Name        => "heartbeat_".$rate."Hz",
+				DoPulser    => 0,
+				Threshold   => $speThresh,
+				PulserRate  => $rate,
+				Compression => CMP_NONE,
+				Format      => FMT_ENG);
 }
 
 sub collectDiscTrigDataCompressedForced {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprForced",
@@ -281,7 +361,7 @@ sub collectDiscTrigDataCompressedForced {
 }
 
 sub collectDiscTrigDataCompressedPulser {
-    my $dom = shift; die unless defined $dom;
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprPulsr",
@@ -292,94 +372,68 @@ sub collectDiscTrigDataCompressedPulser {
 				Format      => FMT_RG);
 }
 
-sub delim {
-    print "-" x ($msgcols+3) . "\n";
-}
-
-sub printc {
-    my $msg = shift;
-    printf "%".$msgcols."s", $msg;
-}
-
-sub logresults {
-    my $msg = shift;
-    my $logfile = sprintf "dmt%04d.log",$nt;
-    print "FAIL!  See $logfile for results.\n";
-    open L, ">$logfile" || die "Can't open $logfile: $!\n";
-    print L $msg;
-    close L;
-    return 0;
-}
-
 sub softboot { 
     my $dom = shift;
-    printc "Softbooting $dom... ";
     my $result = `/usr/local/bin/sb.pl $dom`;
     if($result !~ /ok/i) {
-	return logresults("Softboot result: $result\n");
+	return logmsg("softboot FAIL: $result\n");
     }
     my $details = $detailed?" (driver said softboot worked)":"";
-    print "OK$details.\n";
+    logmsg "softboot $details\n";
     return 1;
 }
 
 sub loadFPGA {
-    my $dom  = shift || die;
-    my $fpga = shift || die;
-    printc "Loading FPGA $fpga from flash on DOM $dom... ";
-    my $se = "/usr/local/bin/se.pl"; die "Can't find $se!\n" unless -e $se;
+    my $dom  = shift || mydie;
+    my $fpga = shift || mydie;
+    my $se = "/usr/local/bin/se.pl"; mydie "Can't find $se!\n" unless -e $se;
     my $loadcmd = "$se $dom "
 	.         "s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif "
 	.         "s\\\"\\\ $fpga\\\"\\\ find\\\ if\\\ fpga\\\ endif.+?\\>";
     my $result = docmd $loadcmd;
     if($result =~ /SUCCESS/) { 
         my $details = $detailed?" (se.pl script reported success)":"";
-        print "OK$details.\n";
+	logmsg "FPGA load $fpga $details\n";
     } else {
-	return logresults "Load of FPGA file failed.  Transcript:\n$result\n";
+	return logmsg "FPGA load $fpga FAIL: $result\n";
     }
     return 1;
 }
 
 sub upload {
-    my $dom = shift;   die unless defined $dom;
-    my $image = shift; die unless defined $image;
+    my $dom = shift;   mydie("missing arg") unless defined $dom;
+    my $image = shift; mydie("missing arg") unless defined $image;
     my $f = filly $image;
-    my $m = "Uploading $f to $dom... ";
-    printc $m;
     my $uploadcmd = "/usr/local/bin/upload_domapp.pl $card{$dom} $pair{$dom} $aorb{$dom} $image";
     my $tmpfile = ".tmp_ul_$dom"."_$$";
     system "$uploadcmd 2>&1 > $tmpfile";
     my $result = `cat $tmpfile`;
     unlink $tmpfile || mydie "Can't unlink $tmpfile: $!\n";
-    if($result !~ /Done, sayonara./) {
-        print "\nupload failed: session text:\n$uploadcmd\n\n$result\n\n";
+    if($result !~ /SUCCESS/) {
+        logmsg "upload $f: FAIL: $uploadcmd\n\n$result\n\n";
         return 0;
     } else {
 	my $details = $detailed?" (upload_domapp.pl script reported success)":"";
-	printc "$m"; print "OK$details.\n";
+	logmsg "upload $f $details\n";
     }
     return 1;
 }
 
 sub versionTest {
     my $dom = shift;
-    printc "Checking version with domapptest... ";
     my $cmd = "$dat -V $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /DOMApp version is \'(.+?)\'/) {
-	return logresults 
-	    "Version retrieval from domapp failed:\ncommand: $cmd\nresult:\n$result\n\n";
+	return logmsg "version FAIL: $cmd\nresult:\n$result\n\n";
     } else {
-        my $details = $detailed?", got good version report from domapptest":"";
-	print "OK ('$1'$details).\n";
+        my $details = $detailed?"(got good version report from domapptest)":"";
+	logmsg "version '$1' $details\n";
     } 
     return 1;
 }
 
 sub setHVTest {
-    my $dom = shift; die unless defined $dom;
-    printc "Testing HV set/get... ";
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     my $moniFile = "hv_test_$dom.moni";
     my $cmd = "$dat -L 500 -d 2 -w 1 -f 1 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
@@ -392,61 +446,55 @@ sub setHVTest {
 		.   $result
 		.   `decodemoni -v last.moni`;
 	}
-	return logresults("Test of setting HV failed:\n"
-	    .      "Command: $cmd\n"
-	    .      "Result:\n$result\n\n"
-	    .      "Monitoring:\n$moni\n");
+	return logmsg("hv FAIL: ".
+		      "Command: $cmd\n".
+		      "Result:\n$result\n\n".
+		      "Monitoring:\n$moni\n");
     }
-    print "OK.\n";
+    my $details = $detailed?", ":"(HV set/get requests worked; set value matched get value)";
+    logmsg "hv $details\n";
     return 1;
 }
 
 sub shortEchoTest {
     my $dom = shift;
-    printc "Performing short domapp echo message test... ";
     my $cmd = "$dat -d2 -E1 $dom 2>&1";
     my $result = docmd $cmd;
-    if($result =~ /Done \((\d+) usec\)\./) {        
-	my $details = $detailed?" (domapptest program reported success)":"";
-	print "OK$details.\n";
-    } else {
-	return logresults ("Short echo test failed:\n".
-			   "Command: $cmd\n".
-			   "Result:\n$result\n\n");
+    if($result !~ /Done \((\d+) usec\)\./) {        
+	return logmsg "echo FAIL: $cmd\n$result\n";
     }
+    my $details = $detailed?"(domapptest reported success)":"";
+    logmsg "echo $details\n";
     return 1;
 }
 
 sub LCMoniTest {
-    my $dom = shift; die unless defined $dom;
-    my $mode = shift; die unless defined $mode;
-    printc "Testing moni. reporting of LC state chg $mode...\n";
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    my $mode = shift; mydie("missing arg") unless defined $mode;
     my $win0 = 100;
     my $win1 = 200;
     my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
-    printc "Mode $mode: ";
     my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
-	return logresults("Test of monitoring of LC state changes failed:\n".
-			  "Command: $cmd\n".
-			  "Result:\n$result\n\n");
+	return logmsg "moni state chg. ($mode) FAIL: domapptest error $_\n"
+	    .         "Command: $cmd\n"
+	    .         "Result:\n$result\n";
     }
     my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
     # print @dmtext;
     my $gotwin = 0;
     my $gotmode = 0;
     for(@dmtext) {
-	if(hadError $_) {
-	    return logresults("Test of monitoring of LC state changes failed:\n"
-			      ."Had error or warning in monitoring stream!\n".$_);
+	if(hadError $_ || hadWarning $_) {
+	    return logmsg "moni state chg. ($mode) FAIL: moni error $_\n";
 	}
-	printWarning($_, $moniFile) if hadWarning $_;
 # STATE CHANGE: LC WIN <- (100, 100)
 	if(/LC WIN <- \((\d+), (\d+)\)/) {
 	    if($1 ne $win0 || $2 ne $win1) {
-		return logresults("Window mismatch ($1 vs $win0, $2 vs $win1\n"
-				      ."Line: $_\nFile: $moniFile\n");
+		return logmsg "moni state chg. ($mode) FAIL: "
+		    .         "window mismatch ($1 vs $win0, $2 vs $win1); "
+		    .          "Line: $_ File: $moniFile\n";
 	    } else {
 		$gotwin = 1;
 	    }
@@ -458,151 +506,108 @@ sub LCMoniTest {
 	}
     }
     if(! $gotwin) { 
-	return logresults((join "\n", @dmtext).
-			  "Didn't get monitoring record indicating LC window change!\n");
+        return logmsg "moni state chg. ($mode) FAIL: "
+	    .         "Didn't get monitoring record indicating LC window change!\n";
     } 
     if(! $gotmode) {
-	return logresults((join "\n", @dmtext).
-			  "Didn't get monitoring record indicating correct LC mode change!\n");
+	return logmsg "moni state chg. ($mode) FAIL: "
+	    .         "Didn't get monitoring record indicating correct LC mode change!\n";
     }
     my $details = $detailed?" (LC mode & window state change records looked good)":"";
-    print "OK$details.\n";
+    logmsg "moni state chg. ($mode) $details\n";
     return 1;
 }
 
 sub asciiMoniTest {
     my $dom = shift;
-    printc "Testing ASCII monitoring... ";
     my $moniFile = "ascii_$dom.moni";
     my $cmd = "$dat -d0 -M1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
-        return logresults("Short monitoring test failed:\n".
-			  "Command: $cmd\n".
-			  "Result:\n$result\n\n");
+        return logmsg("ASCII monitoring FAIL: 'Done' not found.\n".
+		      "Command: $cmd\n".
+		      "Result:\n$result\n\n");
     }
     my $dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
     if($dmtext !~ /MONI SELF TEST OK/) {
-	print "Test failed: desired monitoring string was not present.\n";
-	print "Monitoring output:\n$dmtext\n";
-	return 0;
-    } elsif(hadError $dmtext) {
-	print "Test failed: monitoring stream had error or warning.\n";
-        print "Monitoring output:\n$dmtext\n";
-        return 0;
+	return logmsg("ASCII monitoring FAIL: desired monitoring string was not present.\n".
+		      "Command: $cmd\n".
+		      "Result:\n$result\n\n");
+    } elsif(hadError $dmtext || hadWarning $dmtext) {
+	return logmsg("ASCII monitoring FAIL: monitoring stream had error or warning.\n".
+		      "Monitoring output:\n$dmtext\n".
+                      "Command: $cmd\n".
+                      "Result:\n$result\n\n");
     } else {
-	for(split '\n', $dmtext) {
-	    printWarning($_, $moniFile) if hadWarning $_;
-	}
         my $details = $detailed?" (got self test ASCII monitoring record)":"";
-        print "OK$details.\n";
+	logmsg "ASCII monitoring $details\n";
+	return 1;
     }
-    return 1;
 }
 
 sub getDOMIDTest {
-    my $dom = shift; die unless defined $dom;
-    printc "Testing fetch of DOM ID... ";
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     my $cmd = "$dat -Q $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /DOM ID is \'(.+?)\'/) {
-        return logresults("DOM ID failed:\ncommand: $cmd\nresult:\n$result\n\n");
+        return logmsg("DOM ID FAIL: $cmd\nresult:\n$result\n\n");
     } else {
         my $details = $detailed?", got good ID string from domapptest":"";
-        print "OK ('$1'$details).\n";
+        logmsg "DOM ID ('$1') $details\n";
     }
     return 1;
 }
 
 
-sub swConfigMoniTest {
+sub configMoniTest {
     my $dom = shift;
-    printc "Testing software configuration monitoring... ";
-    my $moniFile = "sw_$dom.moni";
-    my $cmd = "$dat -d2 -M1 -f 1 -m $moniFile $dom 2>&1";
+    my $pat = shift;
+    mydie unless $pat == "CF" || $pat == "HW";
+    my $moniFile = "$pat"."_$dom.moni";
+    my $patsw = ($pat=="CF")?"-f":"-w";
+    my $cmd = "$dat -d2 -M1 $patsw 1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
-	return logresults("Short software monitoring test failed:\nCommand: $cmd\n".
-			  "Result:\n$result\n\n");
+	return logmsg "$pat monitoring: FAIL: domapptest error: $cmd\n$result\n";
     }
     my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
     my $gotone = 0;
     for(@dmtext) {
-	if(/CF EVT/) {
+	if(/$pat EVT/) {
 	    $gotone++;
-	    # print "\n$_";
-	} elsif(hadError $_) {
-	    return logresults("Monitoring stream had error: $_\n");
+	} elsif(hadError $_ || hadWarning $_) {
+	    return logmsg "$pat monitoring: FAIL: moni stream had error or warning: $_\n";
 	}
-	printWarning($_, $moniFile) if hadWarning($_);
     }
-    if($gotone) {
-        my $details = $detailed?" (got one or more software config. monitoring recs.)":"";
-        print "OK$details.\n";
-	return 1;
-    } else {
-	return logresults("No software configuration events found!\n");
+    if(!$gotone) {
+	return logmsg "$pat monitoring: FAIL: no $pat records found!\n";
     }
+    my $details = $detailed?" (got one or more $pat monitoring recs.)":"";
+    logmsg "$pat monitoring $details\n";
+    return 1;
 }
-
-
-
-sub hwConfigMoniTest {
-    my $dom = shift;
-    printc "Testing hardware configuration monitoring... ";
-    my $moniFile = "hw_$dom.moni";
-    my $cmd = "$dat -d2 -M1 -w 1 -m $moniFile $dom 2>&1";
-    my $result = docmd $cmd;
-    if($result !~ /Done \((\d+) usec\)\./) {
-	return logresults("HW monitoring test failed:\nCommand: $cmd\n".
-			  "Result:\n$result\n\n");
-    }
-    my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
-    my $gotone = 0;
-    for(@dmtext) {
-	if(/HW EVT/) {
-	    $gotone++;
-	    # print "\n$_";
-	} elsif(hadError $_) {
-	    return logresults("Have monitoring warning or error!\n$_");
-	}
-	printWarning($_, $moniFile) if hadWarning $_;
-    }
-    if($gotone) {
-        my $details = $detailed?" (got one or more hardware config. monitoring recs.)":"";
-        print "OK$details.\n";
-	return 1;
-    } else {
-	return logresults("No hardware configuration events found!\n");
-    }
-}
-
-
 
 sub domappmode { 
     my $dom = shift;
-    printc "Putting DOM in domapp mode... ";
     my $cmd = "/usr/local/bin/se.pl $dom domapp domapp 2>&1";
     my $result = `$cmd`;
     if($result !~ /SUCCESS/) {
-	return logresults("Change state of DOM $dom to domapp failed.  Result:\n$result\n\n");
+	return logmsg("domapp change state FAIL.\nResult:\n$result\n\n");
     } else {
-	print "OK.\n";
+	logmsg "domapp change state\n";
     }
     return 1;
 }
 
 sub checkEngTrigs {
-    my $type     = shift; die unless defined $type;
-    my $unkn     = shift; die unless defined $unkn;
-    my $lcup     = shift; die unless defined $lcup;
-    my $lcdn     = shift; die unless defined $lcdn;
+    my $type     = shift; mydie("missing arg") unless defined $type;
+    my $unkn     = shift; mydie("missing arg") unless defined $unkn;
+    my $lcup     = shift; mydie("missing arg") unless defined $lcup;
+    my $lcdn     = shift; mydie("missing arg") unless defined $lcdn;
     # If pulser is on, should ONLY have SPE triggers:
-    my $puls     = shift; die unless defined $puls;
-    my $summary  = shift; die unless defined $summary;
+    my $puls     = shift; mydie("missing arg") unless defined $puls;
     my @typelines = @_;
     
-    # print "Checking engineering event trigger lines for appropriate type/flags...\n";
     my $haveForcedTrig = 0;
 
     foreach my $line (@typelines) {
@@ -612,22 +617,21 @@ sub checkEngTrigs {
 	    my $flagstr = $1;
 	    if($flagstr eq "none") { # require no unkn, lcup, lcdn
 		if($unkn || $lcup || $lcdn) {
-		    return logresults("$summary\n(Hit file check failed: ".
-				      "missing flag in trig line $line!)\n");
+		    return "Hit file check failed: missing flag in trig line $line!";
 		}
 	    }
 	    # else look for UNKNOWN_TRIG LC_UP_ENA or LC_DN_ENA
 	    if($unkn && $flagstr !~ /UNKNOWN_TRIG/) { 
-		return logresults("$summary\n(Hit file check failed: ".
-				  "UNKNOWN_TRIG flag required but absent in line $line).\n");
+		return "Hit file check failed: UNKNOWN_TRIG flag required"
+		    .  "but absent in line $line!";
 	    }
 	    if($lcup && $flagstr !~ /LC_UP_ENA/) {
-		return logresults( "$summary\n(Hit file check failed: ".
-				   "LC_UP_ENA flag required but absent in line $line!)\n");
+		return "Hit file check failed: "
+		    .  "LC_UP_ENA flag required but absent in line $line!";
             }
             if($lcdn && $flagstr !~ /LC_DN_ENA/) {
-                return logresults( "$summary\n(Hit file check failed: ".
-				   "LC_DN_ENA flag required but absent in line $line!)\n");
+		return "Hit file check failed: "
+		    .  "LC_DN_ENA flag required but absentin line $line!";
             }
 	    my $hittype = hex($2); 
 	    $haveForcedTrig = 1 if $hittype == 1;
@@ -636,40 +640,34 @@ sub checkEngTrigs {
 	    $badhit = 1 if $type ==2 && $hittype != 1 && $hittype != 2;
 	    $badhit = 1 if $type != 2 && $hittype != $type;
 	    if($badhit) {
-		return logresults("$summary\n(Hit line: $line\n".
-				  "Hit type $hittype doesn't match required type $type (pulser is "
-				  .($puls?"ON":"off").")!)\n");
+		return "Hit type $hittype doesn't match required type $type (pulser is "
+		    .  ($puls?"ON":"off").")!";
 	    }
 	} else {
-	    return logresults("$summary\n(Hit file check failed: ".
-			      "Bad hit type line '$line'!)\n");
+	    return "Hit file check failed: Bad hit type line '$line'!";
 	}
     }
 
     if($type == 1 && !$haveForcedTrig) {
-	return logresults("$summary\n(Run type was 1 and did not have any forced triggers)!\n");
+	
+	return "Run type was 1 and did not have any forced triggers)!";
     } elsif($type == 2 && !$puls && !$haveForcedTrig) {
-	return logresults("$summary\n(Run type was 2, pulser was off, but did not ".
-			  "have any heartbeat triggers!)\n");
+	return "Run type was 2, pulser was off, but did not "
+	    .  "have any heartbeat triggers!";
     } elsif($type == 2 && $puls && $haveForcedTrig) {
-	return logresults("$summary\n(Run type was 2, pulser was on, and had ".
-			  "heartbeat/forced triggers!)\n");
+	return "Run type was 2, pulser was on, and had "
+	    .  "heartbeat/forced triggers!";
     }
-    return 1;
+    return "SUCCESS";
 }
 
 sub docmd {
-    my $cmd = shift; die unless defined $cmd;
-    print "$cmd\n" if defined $showcmds;
+    my $cmd = shift; mydie("missing arg") unless defined $cmd;
+    logmsg "$cmd\n" if defined $showcmds;
     my $outfile = ".dm$$.".time;
-    my $ret;
-    if(defined $showcmds) {
-	$ret = system "$cmd 2>&1 | tee $outfile";
-    } else {
-	$ret = system "$cmd &> $outfile";
-    }
+    my $ret = system "$cmd &> $outfile";
     if($ret & 127) {
-	print "Got signal in subprocess ($ret)!\n";
+	logmsg "signal in subprocess ($ret)\n";
 	exit(1);
     }
     my $rez = `cat $outfile`;
@@ -679,23 +677,18 @@ sub docmd {
 
 sub hadError { my $s = shift; return 1 if ($s =~ /error/i); return 0; }
 sub hadWarning { my $s = shift; return 1 if ($s =~ /warning/i); return 0; }
-sub printWarning { 
-    my $s = shift; 
-    $s =~ s/\t//g;
-    my $f = shift; 
-    print "\nWarning:\n'$s'\n... appeared in monitoring stream $f.\n";
-}
 
 sub doShortHitCollection {
     my %args     = @_;
-    my $dom      = $args{DOM};         die unless defined $dom;
-    my $type     = $args{Trig};        die unless defined $type;
-    my $name     = $args{Name};        die unless defined $name;
+    my $dom      = $args{DOM};         mydie("missing arg") unless defined $dom;
+    my $type     = $args{Trig};        mydie("missing arg") unless defined $type;
+    my $name     = $args{Name};        mydie("missing arg") unless defined $name;
+    my $testname = "hits $name trig=$type";
     my $lcup     = $args{LcUp};        $lcup = 0 unless defined $lcup;
     my $lcdn     = $args{LcDn};        $lcdn = 0 unless defined $lcdn;
     my $dur      = $args{Duration};    $dur  = 4 unless defined $dur;
-    my $puls     = $args{DoPulser};    die unless defined $puls;
-    my $thresh   = $args{Threshold};   die unless defined $thresh;
+    my $puls     = $args{DoPulser};    mydie("missing arg") unless defined $puls;
+    my $thresh   = $args{Threshold};   mydie("missing arg") unless defined $thresh;
     my $dofb     = $args{DoFlasher};   $dofb   = 0  unless defined $dofb;
     my $bright   = $args{FBBright};    $bright = 1  unless defined $bright;
     my $win      = $args{FBWin};       $win    = 10 unless defined $win;
@@ -707,7 +700,6 @@ sub doShortHitCollection {
     my $SNDeadT  = $args{SNDeadTime};  # ""
     my $skipRateChk = $args{skipRateChk};
 
-    printc "Collecting $name (trig. type $type) data... ";
     my $engFile = "short_$name"."_$dom.hits";
     my $monFile = "short_$name"."_$dom.moni";
     my $snFile  = "short_$name"."_$dom.sn"; # Only used if SNDeadT given
@@ -735,15 +727,11 @@ sub doShortHitCollection {
 	$runArg = "-u $bright,$win,$delay,$mask,$pulsrate";
 	$pulsrateArg = ""; 
 # FIXME: check dacs!
-#    my $cmd = "$dat -S0,850 -S1,2300 -S2,350 -S3,2250 -S7,2130 -S14,450"
-#	." -H1 -M1 -m $moni -i $hits -d 5 $dom -B $bright,$win,$delay,$mask,$rate"
-#	." 2>&1";
-
     } else {
 	$runArg = "-B";
 	$pulsrateArg = (defined $pulsrate) ? "-P $pulsrate" : "";
     }
-    my $cmd       = "$dat -d $dur $defaultDACs -S$speThreshDAC,$thresh "
+    my $cmd       = "$dat -G -d $dur $defaultDACs -S$speThreshDAC,$thresh "
 	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg $snArg "
 	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type $runArg -i $engFile $lcstr $dom 2>&1";
 
@@ -778,21 +766,19 @@ sub doShortHitCollection {
 	"Result:\n$result\n\n".
 	"Monitoring output:\n$moni\n";
     
-    if(hadError $moni) {
-	return logresults("$summary\n(Had error or warning in monitoring file $monFile.)\n");
+    if(hadError $moni || hadWarning $moni) {
+	return logmsg "$testname FAIL: error or warning in $monFile\n$summary";
     }
     if($result !~ /Done \((\d+) usec\)\./) {
-	return logresults("$summary\n(Did not find terminator ['Done'] string from domapptest)\n");
+	return logmsg "$testname FAIL: domapptest finished abnormally\n$summary";
     }
     if($result =~ /ERROR/) {
-	return logresults("$summary\n(Had ERROR in domapptest output)\n");
-    }
-
-    for(split '\n', $moni) {
-	printWarning($_, $monFile) if hadWarning($_);
+	return logmsg "$testname FAIL: ERROR in domapptest output\n$summary";
     }
 
     # Check for trigger rate consistency
+    my $trigType = "?";
+    my $trigRate = "?";
     if(!$skipRateChk && $dataFmt == 0 && defined $pulsrate) {
 	# Look for discriminator trigger if running in pulser mode:
 	my $desiredType = $puls ? "Discriminator Trigger" : "CPU Trigger";
@@ -802,34 +788,34 @@ sub doShortHitCollection {
 	    my $ratestr;
             my $evrate = $nhits/$dur;
             if($evrate < $pulsrate/3 || $evrate > $pulsrate*3) {
-		return logresults("$summary\n(Measured forced trigger rate ($evrate Hz) ".
-				  "doesn't match requested rate ($pulsrate Hz)).\n");
+		return logmsg "$testname FAIL: measured forced trigger rate ($evrate Hz) ".
+		    "doesn't match requested rate ($pulsrate Hz))\n$summary\n";
 	    } else {
 		$desiredType =~ m/(\S*)/;
-		printf "($1 trig. rate %2.1f Hz) ", $evrate;
+		$trigType = $1;
+		$trigRate = $evrate;
 	    }
 	} else {
-	    return logresults("$summary\n(Didn't get any forced trigger data!)\n");
+	    return logmsg "$testname FAIL: didn't get any forced trigger data!\n$summary\n";
 	}
     }
     # Check for SPE rate consistency if rate is defined and pulser in use:
     if($dataFmt == 0 && defined $pulsrate && $puls) {
-	my @moni    = `decodemoni -v $monFile | grep HW`;
+	my @moni   = `decodemoni -v $monFile | grep HW`;
 	my $spesum = 0;
 	my $nspe   = 0;
 	for(@moni) {
 	    my $spe = (split '\s+')[32];
-	    # print "Monitoring string $_ -> $spe\n";
 	    $nspe++;
 	    $spesum += $spe;
 	}
 	if($nspe == 0) {
-	    return logresults("$summary\n(No HW monitoring records in $monFile!)");
+	    return logmsg "$testname FAIL: no HW moni records in $monFile!\n$summary\n";
 	}
 	my $speAvg = $spesum / $nspe;
 	if(!$skipRateChk && $speAvg < $pulsrate/3 || $speAvg > $pulsrate*3) {
-	    return logresults("$summary\n(Measured SPE discriminator rate ($speAvg Hz) doesn't ".
-			      "match requested rate ($pulsrate Hz))!\n");
+	    return logmsg "$testname FAIL: measured SPE discriminator rate ($speAvg Hz) doesn't ".
+		"match requested rate ($pulsrate Hz)!\n$summary\n";
 	}
     }
 
@@ -843,11 +829,11 @@ sub doShortHitCollection {
 	$nhitsline = scalar @hitsLine;
 	if(scalar @errWarn > 0) {
 	    my $errWarn = join '', @errWarn;
-	    return logresults("$summary\n$errWarn\n".
-			      "(Had ERROR or WARNING in decompressed $engFile!)\n");
+	    return logmsg "$testname FAIL: had ERROR or WARNING in decompressed $engFile!\n"
+		.         "$summary\n";
 	}
     } else {
-	return logresults("$summary\n(BAD DATA FORMAT!!! ($dataFmt))\n");
+	return logmsg "$testname FAIL: BAD DATA FORMAT ($dataFmt)\n$summary\n";
     }
 
     # If asked for, look for supernova data
@@ -862,52 +848,54 @@ sub doShortHitCollection {
 	    }
 	}
 	if($SNbins == 0) {
-	    return logresults("$summary\n\nSupernova data file $snFile had no timeslice data!\n");
+	    return logmsg("$testname FAIL: $snFile had no timeslice data!\n$summary\n");
 	}
 	if($SNcountsTotal < 1) {
-	    return logresults("$summary\n\nSupernova data file $snFile had no hits!\n");
+	    return logmsg("$testname FAIL: supernova data file $snFile had no hits!\n$summary\n");
 	}
-    }
-    my $SNsummary = (defined $SNDeadT) ? ", $SNbins SN timeslices, $SNcountsTotal SN counts" : "";
-    if($nhitsline =~ /^\s*(\d+)$/ && $1 > 0) {
-	my $nhits = $1;
-	my $ratestr;
-	print "OK ($nhits hits$SNsummary).\n";
-    } else {
-	return logresults("$summary\n(Didn't get any hit data!)\n");
     }
 
     if($dataFmt == 0) {
 	my @typelines = `/usr/local/bin/decodeeng $engFile 2>&1 | grep type`;
-	if(!checkEngTrigs($type, 0, $lcup, $lcdn, $puls, $summary, @typelines)) {
-	    return 0;
+	my $chkEngResult = checkEngTrigs($type, 0, $lcup, $lcdn, $puls, @typelines);
+	if($chkEngResult ne "SUCCESS") {
+	    return logmsg "$testname FAIL: engineering event check failure:\n"
+		.         "$chkEngResult\n$summary\n";
 	}
     }
+
+    if($nhitsline =~ /^\s*(\d+)$/ && $1 > 0) {
+	my $nhits = $1;
+	my $ratestr;
+	logmsg "$testname nhits=$nhits snbins=$SNbins sntot=$SNcountsTotal\n";
+    } else {
+	return logmsg "$testname FAIL: didn't get any hit data\n$summary\n";
+    }
+
     return 1;
 }
 
 sub flasherVersionTest {
     my $dom  = shift;
-    printc "Fetching flasher board ID... ";
     my $cmd = "$dat -z $dom 2>&1";
     my $result = docmd $cmd;
+    my $fbid;
     if($result =~ /Flasher board ID is \'(.*?)\'/) {
 	if($1 eq "") {
-	    return logresults("Flasher board ID was empty.\n");
+	    return logmsg("flasher board ID FAIL: flasher board ID was empty\n$cmd\n$result\n");
 	} else {
-	    return logresults("Got flasher board ID $1.\n");
+	    $fbid = $1;
 	}
     } else {
-	return logresults("Version string request: didn't get ID ".
-			  "(wrong domapp version?  No flasher board attached?)\n".
-			  "Session:\n$result\n");
+	return logmsg("flasher board ID FAIL: $cmd\n$result\n");
     }
-    print "OK.\n";
+    my $details = $detailed?"(found nonempty flasher board ID)":"";
+    logmsg "flasher board ID ($fbid) $details\n";
     return 1;
 }
 
 sub flasherTest { 
-    my $dom  = shift; die unless defined $dom;
+    my $dom  = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => CPUTRIG,
                                 Name        => "Flasher",
@@ -927,20 +915,21 @@ sub flasherTest {
 sub filly { my $pat = shift; my @l = split '/', $pat; return $l[-1]; }
 
 sub doMultiplePedestalFetch {
-    my $dom = shift; die unless defined $dom;
-    printc "Running multiple pedestal fetch test... ";
+    my $dom = shift; mydie("missing arg") unless defined $dom;
     my $cmd = "$dat -o $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done/) {
-	print "\nTest failed... fetching monitoring data...\n";
         my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
         my $result     = docmd $getMoniCmd;
 	my $moni       = `decodemoni -v last.moni|grep -v HDR`;
-        return logresults("Command: $cmd\n".
-			  "Result:\n$result\n\n".
-			  "Monitoring stream:\n$moni\n");
+        return logmsg("multi pedestal fetch FAIL:\n".
+		      "Command: $cmd\n".
+		      "Result:\n$result\n\n".
+		      "Monitoring stream:\n$moni\n");
     }
-    print "OK.\n";
+    my $details = $detailed?"(got 'Done' string from domapptest)":"";
+    logmsg "multi pedestal fetch $details\n";
+    return 1;
 }
 
 
@@ -995,7 +984,9 @@ Options:
      -l <name>:   Load FPGA image <name> from flash before test
      -N <loops>:  Iterate <loops> times
      -r:          Remove error log files before running
-     -o:          Perform long duration tests
+     -t <sec>:    Run for <sec> seconds (default: $defaultdur)
+     -o:          Perform long duration tests (normally skipped)
+     -C:          Test only compressed data (pedestal collection, ...)
 
 If -V or -F options are not given, only tests appropriate for a
 bare DOM mainboard are given.
@@ -1013,10 +1004,62 @@ sub removeLogs {
     my @logs = <dmt????.log>;
     for(@logs) {
 	print "Removing $_... ";
-	unlink($_) || die("Can't remove log file $_: $!\n");
+	unlink($_) || mydie("Can't remove log file $_: $!\n");
 	print "OK.\n";
     }
 }
 
-__END__
+sub reapKids {
+    use POSIX ":sys_wait_h";
+    my $kid;
+    while(1) {
+	$kid = waitpid(-1, &WNOHANG);
+	if($kid == -1) {
+	    last;
+	} else {
+	    select(undef,undef,undef,0.01);
+	}
+    }
+}
 
+sub killKids {
+    for(@_) {
+	kill('KILL', $_) || mydie "Can't kill $_: $!\n";
+    }
+}
+
+sub logmsg {
+    my $msg  = shift;
+    my $time = time;
+    my $now  = scalar localtime;
+    open L, ">>$logfile" || mydie "Can't open $logfile: $!\n";
+    print L "$time ($now) $msg";
+    close L;
+    return 0;
+}
+
+sub logOf {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return "domapp$dom.log";
+}
+
+sub checkProcs {
+    my @processes = `ps ax | grep $O | grep -v grep`;
+    my $numprocs = 0;
+    for(@processes) {
+	$numprocs++ if(/perl.+?$O/);
+    }
+    if($numprocs > 1) {
+	print @processes;
+	die "$O is already running!\n";
+    }
+}
+
+sub mydie { 
+    my $m = shift; 
+    $m = "bad arg?" unless defined $m; 
+    print LOG "$O: FATAL ERROR ($m)\n"; 
+    die $m; 
+}
+
+__END__

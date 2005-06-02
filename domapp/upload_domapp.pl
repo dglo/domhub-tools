@@ -5,9 +5,7 @@
 #
 # John Jacobsen, John Jacobsen IT Services, for LBNL/IceCube
 # Dec. 2003
-# $Id: upload_domapp.pl,v 1.4 2005-05-26 03:41:12 jacobsen Exp $
-my $prg = (split '/', $0)[-1];
-print "$prg by jacobsen\@npxdesigns.com for LBNL/IceCube...\n";
+# $Id: upload_domapp.pl,v 1.5 2005-06-02 18:13:45 jacobsen Exp $
 
 use Fcntl;
 use strict;
@@ -15,6 +13,7 @@ use IO::Socket;
 use IO::Select;
 use Getopt::Long;
 my $verbose = 0;
+my $quiet   = 0;
 $|++;
 
 sub drain_iceboot;
@@ -24,7 +23,7 @@ Usage: $0 [-f name] <card> <pair> <dom> <file>
           -f option writes flash using name <name>
 	  -n option skips gunzip command
           -u option quits immediately after upload
-
+	  -q option runs more quietly
 EOF
 ;
 	}
@@ -37,10 +36,16 @@ my $flash;
 my $help;
 my $uploadonly;
 my $nogunzip;
-GetOptions("flash=s" => \$flash,
-	   "upload|u"=> \$uploadonly,
-	   "nogunzip|n"=> \$nogunzip,
-	   "help|h"  => \$help) || die usage;
+my $quiet;
+GetOptions("flash=s"    => \$flash,
+	   "upload|u"   => \$uploadonly,
+	   "nogunzip|n" => \$nogunzip,
+	   "quiet|q"    => \$quiet,
+	   "help|h"     => \$help) || die usage;
+
+my $O = (split '/', $0)[-1];
+print "$O by jacobsen\@npxdesigns.com for LBNL/IceCube...\n" unless $quiet;
+
 die usage if $help;
 # Check for domserv & sz...
 
@@ -60,25 +65,25 @@ die usage unless defined $card && defined $pair && defined $dom && defined $file
 die "Can't find file $file to upload.\n" unless -e $file;
 $dom =~ tr/[a-z]/[A-Z]/;
 die usage unless $dom eq "A" || $dom eq "B";
-print "$file -> $card $pair $dom...\n";
+print "$file -> $card $pair $dom...\n" unless $quiet;
 
 my $port = 4001 + $card * 8 + $pair * 2 + ($dom eq 'A' ? 0 : 1);
 my $szport = $port + 500;
 my $szargs = "-q --ymodem -k --tcp-client localhost:$szport $file";
 
-print "Talking port $port, SZ port $szport.\n";
+print "Talking port $port, SZ port $szport.\n" unless $quiet;
 # Start domserv...
 
 my $pid = fork;
 die "Can't fork: $!\n" unless defined $pid;
 
 if($pid == 0) {
-    my $domserv_cmd = "$domserv -dh";
-    print "EXEC($domserv_cmd)\n";
+    my $domserv_cmd = "$domserv -dh 2>&1 > /dev/null";
+    print "EXEC($domserv_cmd)\n" unless $quiet;
     open DS, "|$domserv_cmd";
     my $domsrvinput = "open dom $card$pair$dom";
     print DS "$domsrvinput\n";
-    print "DOMSERV($domsrvinput)\n";
+    print "DOMSERV($domsrvinput)\n" unless $quiet;
     close DS;
     sleep 1000;
     # Domserv waits at this point
@@ -89,65 +94,40 @@ if($pid == 0) {
 # connect and upload here
 select undef, undef, undef, 0.3; # Wait for domserv to start up
 
-if(0) {
-if(domserv_command("localhost", $port, "ls")) {
-    warn "domserv_command failed (ls).\n";
-    killdomserv $pid;
-    exit;
-}
-}
-
-if(0) {
-if(domserv_command("localhost", $port, "domid crlf type type")) {
-    warn "domserv_command failed (domid).\n";
-    killdomserv $pid;
-    exit;
-}
-}
-
-if(0) {
-if(domserv_command("localhost", $port, "8 0 ?DO i readADC . drop LOOP")) {
-    warn "domserv_command failed.\n";
-    killdomserv $pid;
-    exit;
-}
-}
-
 if(domserv_command("localhost", $port, "ymodem1k", "CCC")) {
-    warn "domserv_command failed (ymodem1k).\n";
+    warn "FAIL: ymodem1k didn't give expected 'CCC...' pattern (wrong DOM state?)\n";
     killdomserv $pid;
     exit;
 }
 
-
-my $cmd = "$sz $szargs\n";
-print $cmd;
+my $cmd = "$sz $szargs 2>&1\n";
+print $cmd unless $quiet;
 sleep 1;
-system $cmd;
+my $szresult = `$cmd`;
+print "SZ command result: $szresult\n" unless $quiet;
 
 if(domserv_command("localhost", $port, ".s")) {
-    warn "domserv_command failed (.s).\n";
+    warn "FAIL: domserv_command failed (.s).\n";
     killdomserv $pid;
     exit;
 }
 
 if(!defined $uploadonly) {
-
     if(! $nogunzip && domserv_command("localhost", $port, "gunzip")) {
-	warn "domserv_command failed (gunzip).\n";
+	warn "FAIL: domserv_command failed (gunzip).\n";
 	killdomserv $pid;
 	exit;
     }
     
     if(defined $flash) {
 	if(domserv_command("localhost", $port, "s\" $flash\" create")) {
-	    warn "domserv_command failed (write flash).\n";
+	    warn "FAIL: domserv_command failed (write flash).\n";
 	    killdomserv $pid;
 	    exit -1;
 	}
     } else {
 	if(domserv_command("localhost", $port, "exec")) {
-	    warn "domserv_command failed (exec).\n";
+	    warn "FAIL: domserv_command failed (exec).\n";
 	    killdomserv $pid;
 	    exit;
 	}
@@ -157,7 +137,7 @@ if(!defined $uploadonly) {
 select undef, undef, undef, 0.3;
 killdomserv $pid;
 
-print "Done, sayonara.\n";
+print "SUCCESS\n";
 exit;
 
 sub printable {
@@ -167,13 +147,10 @@ sub printable {
 }
 
 sub domserv_command {
-    my $hostname = shift;
-    $hostname = "localhost" unless defined $hostname;
-    my $port = shift;
-    $port = 4001 unless defined $port;
-    my $cmd = shift;
-    $cmd = "\r" unless defined $cmd;
-    my $expect = shift;
+    my $hostname = shift; die unless defined $hostname;
+    my $port     = shift; die unless defined $port;
+    my $cmd      = shift; die unless defined $cmd;
+    my $expect   = shift;
     # Wait for previous socket to close
     select undef, undef, undef, 0.1;
     my $socket = new IO::Socket::INET(PeerAddr   => $hostname,
@@ -183,7 +160,7 @@ sub domserv_command {
 				      );
     
     if(!defined $socket) {
-	print "Can't set up socket to $hostname:$port :-- $!\n";
+	warn "FAIL: Can't set up socket to $hostname:$port :-- $!\n";
 	return 1;
     }
     syswrite $socket, "\r\r$cmd\r";
@@ -195,8 +172,8 @@ sub domserv_command {
 	my $read = sysread($socket, $buf, 1);
 	if($read) {
 	    $totbuf .= $buf;
-	    print " " if $buf eq "\r";
-	    print $buf if printable($buf);
+	    print " " if !$quiet && $buf eq "\r";
+	    print $buf if !$quiet && printable($buf);
 	    if(defined $expect) {
 		if($totbuf =~ /$expect/m) {
 		    # print "Got EXPECT($expect)!\n";
@@ -214,7 +191,6 @@ sub domserv_command {
     }
     close($socket);
     if(defined $expect and ! $gotexpect) {
-	print "Didn't get EXPECT pattern ($expect).\n";
 	return 1;
     } else { # Alles gute
 	return 0;
@@ -225,9 +201,8 @@ sub killdomserv {
     my $pid = shift;
     return undef unless defined $pid;
     return undef unless $pid > 0;
-    print "Killing domserv...\n";
     kill 9, $pid;
-    system "killall domserv";
+    system "killall domserv 2>&1 > /dev/null";
 
 }
 
