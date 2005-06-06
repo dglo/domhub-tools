@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.20 2005-06-02 18:13:45 jacobsen Exp $
+   $Id: domapptest.c,v 1.21 2005-06-06 20:40:41 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -89,7 +89,7 @@ int usage(void) {
 
 #define MAX_MSGS_IN_FLIGHT    8 /* Don't queue more than 8 msgs at a time */
 #define MAX_MSG_BYTES      8092
-#define MAXRDFAILED           5
+#define MAXRDFAILED          10
 #define READCYCLE            10
 #define DO_TEST_INJECT        0 /* Set to true if you want to inject test data */
 #define MINLCWIN            100
@@ -1075,6 +1075,11 @@ int beginRun(int filep, int bufsiz, int dopulser) {
     }
     fprintf(stderr,"OK.\n");
   }
+
+  fprintf(stderr,"Forcing run stop: ");
+  r=domsg(filep, bufsiz, 10000,
+	  EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "");
+  fprintf(stderr,"%d.\n", r);
 
   fprintf(stderr,"Starting run... ");
   if((r=domsg(filep, bufsiz, 10000,
