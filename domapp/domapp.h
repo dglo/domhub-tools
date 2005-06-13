@@ -69,7 +69,7 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DATA_ACC_SET_COMP_MODE     26
 #define DATA_ACC_GET_COMP_MODE     27
 #define DATA_ACC_GET_SN_DATA       28
-
+#define DATA_ACC_RESET_MONI_BUF    29
 #define DSC_READ_ALL_ADCS 10
 #define DSC_READ_ONE_ADC 11
 #define DSC_READ_ALL_DACS 12
@@ -148,8 +148,11 @@ int getMsg(int filep, DOMMSG * m, int bufsiz, int maxpoll) {
   if(ret < 0 || (! (fds.revents & POLLIN))) { free(buf); return 0; }
 
   int nr = read(filep, buf, bufsiz);
+  int i;
   if(nr < MSG_HDR_LEN) {
     fprintf(stderr, "getMsg: Short read (%d bytes) of header!\n", nr);
+    for(i=0;i<nr;i++)
+      fprintf(stderr, "\t%02x %c\n",buf[i],buf[i]>33&&buf[i]<126?buf[i]:'X');
     free(buf); 
     return -1;
   }
@@ -161,7 +164,6 @@ int getMsg(int filep, DOMMSG * m, int bufsiz, int maxpoll) {
   if(datalen > bufsiz) {
     fprintf(stderr,"%d byte message too large, exceeds max=%d bytes.\n"
 	    "Header=(", datalen, bufsiz);
-    int i;
     for(i=0;i<8;i++) 
       fprintf(stderr, "%02x ",(int)m->head.h[i]);
     for(i=0;i<8;i++) 
@@ -325,6 +327,10 @@ DOMMSG * newGetDomappReleaseMsg(void) {
   setMsgID(m, 0);
   setMsgDataLen(m, 0);
   return m;
+}
+
+DOMMSG * newMsg(void) {
+  return (DOMMSG *) malloc(sizeof(DOMMSG));
 }
 
 DOMMSG * newGetSNDataMsg(void) {
@@ -539,7 +545,7 @@ DOMMSG * newSetDataCompressionMsg(int toggle) {
   return m;
 }
 
-int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout) {
+int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout, int *msgStatus) {
   int isend;
   isend = sendMsg(filep, s, timeout);
   if(isend < msgDataLen(s)+MSG_HDR_LEN) {
@@ -558,10 +564,7 @@ int sendAndReceive(int filep, int bufsiz, DOMMSG * s, DOMMSG * r, int timeout) {
     fprintf(stderr,"sendAndReceive: Short read (%d bytes) on message reply.\n", len);
     return 1;
   }
-  if(r->head.hd.status != 1) {
-    fprintf(stderr,"Bad message status (%d) in reply.\n", r->head.hd.status);
-    return 1;
-  }
+  *msgStatus = r->head.hd.status;
   return 0;
 }
 
@@ -580,7 +583,8 @@ void dumpMsg(FILE *fp, char *name, DOMMSG * m) {
 #define DOMAPP_ERR_MSG   2
 #define DOMAPP_ERR_ARG   3
 
-int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, ...) {
+int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt,
+	  ...) {
 
   char * sendarg = fmt;
   char * recvarg = fmt;
@@ -648,11 +652,19 @@ int domsg(int filep, int bufsiz, int timeout, UBYTE mt, UBYTE mst, char * fmt, .
     return DOMAPP_ERR_NOMEM;
   }
   zeroMsg(reply);
+  int msgStatus;
   int sar;
-  if((sar=sendAndReceive(filep, bufsiz, m, reply, timeout)) != 0) {
+  if((sar=sendAndReceive(filep, bufsiz, m, reply, timeout, &msgStatus)) != 0) {
     fprintf(stderr,"sendAndReceive failed(%d)!\n", sar);
     free(reply);
     free(m);
+    return DOMAPP_ERR_MSG;
+  }
+
+  if(msgStatus != 1) {
+    fprintf(stderr,"sendAndReceive: message reply had bad status (%d)!\n", msgStatus);
+    free(m);
+    free(reply);
     return DOMAPP_ERR_MSG;
   }
 
