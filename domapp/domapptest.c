@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.21 2005-06-06 20:40:41 jacobsen Exp $
+   $Id: domapptest.c,v 1.22 2005-06-13 21:51:29 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -37,7 +37,7 @@ int usage(void) {
 	  "    -Q get DOM ID from DOM\n"
 	  "    -c change mode from Iceboot to domapp first\n"
 	  "    -s stuffing mode for maximum bandwidth\n"
-	  "    -d run duration, seconds (default 10)\n"
+	  "    -d run duration, seconds (default 1)\n"
 	  "    -S <dac>,<val> Set DAC <dac> to <val>.  <dac> numeric only, sorry.\n"
 	  "       Repeatable.\n"
 	  "  Periodic message types:\n"
@@ -72,9 +72,10 @@ int usage(void) {
 	  "    -p: Run pulser to generate SPE triggers in absence of real PMT\n"
 	  "    -P <rate>: Set pulser/heartbeat rate to <rate> Hz\n"
 	  "    -L <Volts>: Set DOM high voltage (BE CAREFUL!). Volts == DAC units/2.\n"
-	  "    -K <file>,<freq>,<mode>,<deadtime>: collect supernova data in file <file>; \n"
-	  "       frequency is relative to hit, moni etc. messages.  \n"
-	  "       Mode 0=spe, 1=mpe; deadtime in [6400, 512000].\n"
+	  "    -K <freq>,<mode>,<deadtime>,<file>: collect supernova data in file <file>; \n"
+	  "       frequency (0==don't fetch count data) is relative to hit,\n"
+	  "       moni etc. messages.  Mode 0=spe, 1=mpe; deadtime in [6400, 512000].\n"
+	  "    -k Perform long supernova test.\n"
 	  "  Flasher board interface:\n"
 	  "    -z Fetch flasher board ID\n"
 	  "    -u <bright>,<win>,<delay>,<mask>,<rate>: Flasher board run.  Do not use\n"
@@ -89,7 +90,7 @@ int usage(void) {
 
 #define MAX_MSGS_IN_FLIGHT    8 /* Don't queue more than 8 msgs at a time */
 #define MAX_MSG_BYTES      8092
-#define MAXRDFAILED          10
+#define MAXRDFAILED         100
 #define READCYCLE            10
 #define DO_TEST_INJECT        0 /* Set to true if you want to inject test data */
 #define MINLCWIN            100
@@ -131,7 +132,9 @@ int setDataFormat(int filep, int bufsiz, int mode);
 int turnOffPeriodicMonitoring(int filep, int bufsiz);
 int setUpTrigMode(int filep, int bufsiz, int trigMode);
 int reportableDelta(int dtsec, int lastdtsec);
+int doSnCrashTest(int filep, int bufsiz);
 int doResetMonitoringMessage(int filep, int bufsiz);
+void getTimes(struct timeval * tstart, int * dtsec, int *dtusec, unsigned long long * dt);
 
 #define EMPTY  0
 #define ECHO   1
@@ -168,7 +171,7 @@ int main(int argc, char *argv[]) {
   }
 
   int doChangeState = 0;
-  int secDuration   = 10;
+  int secDuration   = 1;
   int stuffit       = 0;
   int hwival        = 0;
   int cfival        = 0;
@@ -218,10 +221,12 @@ int main(int argc, char *argv[]) {
   int doCompTest = 0; 
   int dosn = 0, snmode, sndeadt, sfreq=0;
   int snOn = 0, lcOn = 0, hvOn = 0, moniOn = 0;
+  int dosntest = 0;
+  int running = 0;
   int doResetMoni = 0;
   while(1) {
     char c = getopt(argc, argv, 
-		    "QVGovhcBOspzi:d:E:M:H:D:m:w:f:T:N:"
+		    "QVGovhcBOkspzi:d:E:M:H:D:m:w:f:T:N:"
 		    "W:F:C:R:A:S:L:I:P:Z:X:K:u:");
     if (c == -1) break;
 
@@ -231,14 +236,15 @@ int main(int argc, char *argv[]) {
     case 'o': doCompTest = 1; break;
     case 'c': doChangeState = 1; break;
     case 'd': secDuration = atoi(optarg); break;
+    case 'k': dosntest = 1; break;
     case 's': stuffit = 1; break;
     case 'z': dofbid = 1; break;
     case 'X': doFmt = 1; fmtMode = atoi(optarg); break;
     case 'Z': doComp = 1; compMode = atoi(optarg); break;
     case 'A': whichATWD = atoi(optarg); defineATWD = 0; break;
-    case 'E': efreq = atoi(optarg); dopoll = 1; break;
-    case 'M': mfreq = atoi(optarg); dopoll = 1; break;
-    case 'H': hfreq = atoi(optarg); dopoll = 1; break;
+    case 'E': efreq = atoi(optarg); if(efreq>0) dopoll = 1; break;
+    case 'M': mfreq = atoi(optarg); if(mfreq>0) dopoll = 1; break;
+    case 'H': hfreq = atoi(optarg); if(hfreq>0) dopoll = 1; break;
     case 'B': dohitbuf = 1; break;
     case 'p': dopulser = 1; break;
     case 'P': doPulserRate = 1; pulserRate = atoi(optarg); break;
@@ -251,7 +257,7 @@ int main(int argc, char *argv[]) {
       if(sscanf(optarg, "%d,%d,%d,%s", 
 		&sfreq, &snmode, &sndeadt, snfile)!=4) exit(usage());
       dosn   = 1;
-      dopoll = 1;
+      if(sfreq>0) dopoll = 1;
       break;
     case 'I': 
       if(sscanf(optarg, "%d,%d,%d", &lcmode,
@@ -358,7 +364,7 @@ int main(int argc, char *argv[]) {
   int * cyclic;
   if(dopoll) {
     cyclic = getCycle(efreq, mfreq, hfreq, dfreq, sfreq);
-    if(!cyclic) { fprintf(stderr,"Malloc failed.\n"); exit(-1); }
+    if(!cyclic) { fprintf(stderr,"Malloc failed or divide by zero\n"); exit(-1); }
     int showfreq = 0, il;
     for(il=0;showfreq && il<efreq+mfreq+hfreq+dfreq;il++) {
       fprintf(stderr,"Entry %d <- %s\n", il, msgstr[cyclic[il]]);
@@ -378,6 +384,12 @@ int main(int argc, char *argv[]) {
 
   if(doCompTest) {
     if(testPedestalCollection(filep, bufsiz)) exit(-1);
+    fprintf(stderr,"Done.\n");
+    exit(0);
+  }
+  
+  if(dosntest) {
+    if(doSnCrashTest(filep, bufsiz)) exit(-1);
     fprintf(stderr,"Done.\n");
     exit(0);
   }
@@ -419,7 +431,7 @@ int main(int argc, char *argv[]) {
   DOMMSG * getHitsMsg   = newGetHitDataMsg();
   DOMMSG * dacMsg       = newSetDacMsg(dacnum, 0);
   DOMMSG * getSNDataMsg = newGetSNDataMsg();
-  DOMMSG * msgReply     = (DOMMSG *) malloc(sizeof(DOMMSG));
+  DOMMSG * msgReply     = newMsg();
   if(!echoMsg || !moniMsg || !dacMsg || !getHitsMsg || !getSNDataMsg || !msgReply) {
     fprintf(stderr, "Couldn't get message object, probably out of memory?\n");
     exit(-1);
@@ -565,15 +577,21 @@ int main(int argc, char *argv[]) {
   }
 
   /* Start data taking ... */
-  if(dohitbuf && beginRun(filep, bufsiz, dopulser)) {
-    fprintf(stderr,"Run start failed.\n");
-    exit(-1);
+  if(dohitbuf) {
+    if(beginRun(filep, bufsiz, dopulser)) {
+      fprintf(stderr,"Run start failed.\n");
+      exit(-1);
+    }
+    running = 1;
   }
 
   /* ... or do flasher run... */
-  if(dofbrun && beginFBRun(filep, bufsiz, bright, win, delay, mask, rate)) {
-    fprintf(stderr,"Flasher run start failed.\n");
-    exit(-1);
+  if(dofbrun) {
+    if(beginFBRun(filep, bufsiz, bright, win, delay, mask, rate)) {
+      fprintf(stderr,"Flasher run start failed.\n");
+      exit(-1);
+    }
+    running = 1;
   }
 
   /* Set up supernova system, if desired */
@@ -595,15 +613,15 @@ int main(int argc, char *argv[]) {
   /* keep gettimeofday near beginRun to time run correctly */
   struct timeval tstart; 
   gettimeofday(&tstart, NULL);
-
-
   struct timeval lastTWrite, lastTRead;
 
   if(dopoll) fprintf(stderr,"Entering periodic data collection loop...\n");
   /* Messaging loop */
   int icyc = 0;
   int done = 0;
-
+  int dtsec = 0, dtusec = 0;
+  unsigned long long dt = 0;
+  if(!dopoll) sleep(secDuration); 
   while(dopoll) {
     int gotwrite = 0;
     int rdfailed = 0;
@@ -726,16 +744,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Check for done, show rates, etc. */
-    struct timeval tnow;
-    gettimeofday(&tnow, NULL);
-    unsigned long long dt = (tnow.tv_sec - tstart.tv_sec)*1000000 
-      + (tnow.tv_usec - tstart.tv_usec);
-    int dtsec = tnow.tv_sec - tstart.tv_sec;
-    int dtusec = tnow.tv_usec - tstart.tv_usec;
-    if(dtusec < 0) {
-      dtusec += 1000000;
-      dtsec --;
-    }
+    getTimes(&tstart, &dtsec, &dtusec, &dt);
+
     if(reportableDelta(dtsec, lastdtsec)) {
       double totBytes = (double) msgBytes[ECHO] + (double) msgBytes[MONI] + 
 	(double) msgBytes[HITS] + (double) msgBytes[SETDAC] + (double) msgBytes[SN];
@@ -748,9 +758,12 @@ int main(int argc, char *argv[]) {
     }
     
     if(dohitbuf && dtsec >= secDuration && ! done) {
-      if(endRun(filep, bufsiz, dopulser)) {
-	fprintf(stderr,"endRun failed.\n");
-	exit(-1);
+      if(running) {
+	if(endRun(filep, bufsiz, dopulser)) {
+	  fprintf(stderr,"endRun failed.\n");
+	  exit(-1);
+	}
+	running = 0;
       }
       if(lcOn) {
 	if(turnOffLC(filep, bufsiz)) {
@@ -787,29 +800,39 @@ int main(int argc, char *argv[]) {
     
     /* Add 1 sec to run length after run stop to get last monitoring, etc. events */
     if(dtsec >= secDuration+1) {
-      fprintf(stderr,"Done (%lld usec).\n",dt);
       break;
     }
     lastdtsec = dtsec;
       
   } /* while(dopoll) */
-  
-  if(hvOn) {
-    highVoltageOff(filep, bufsiz);
-    hvOn = 0;
+
+  int hadErr = 0;
+  if(running && endRun(filep, bufsiz, dopulser)) {
+    fprintf(stderr,"endRun failed.\n");
+    hadErr++;
+  } else {
+    running = 0;
   }
   if(snOn && turnOffSN(filep, bufsiz)) {
     fprintf(stderr,"turnOffSN failed.\n");
+    hadErr++;
   } else { 
     snOn = 0; 
   }
+  if(hvOn) {
+    highVoltageOff(filep, bufsiz);
+    hadErr++;
+    hvOn = 0;
+  }
   if(lcOn && turnOffLC(filep, bufsiz)) {
     fprintf(stderr,"ERROR: turnOffLC failed.\n");
+    hadErr++;
   } else { 
     lcOn = 0; 
   }
   if(moniOn && turnOffPeriodicMonitoring(filep, bufsiz)) {
     fprintf(stderr,"ERROR: turnOffPeriodicMonitoring failed.\n");
+    hadErr++;
   } else {
     moniOn = 0;
   }
@@ -822,6 +845,13 @@ int main(int argc, char *argv[]) {
   if(savemoni) close(monifd);
   if(savemoni) close(hitsfd);
   free(cyclic);
+
+  getTimes(&tstart, &dtsec, &dtusec, &dt);
+  if(hadErr) {
+    fprintf(stderr,"FAIL (%lld usec).\n", dt);
+  } else {
+    fprintf(stderr,"Done (%lld usec).\n", dt);
+  }
   return 0;
 }
 
@@ -940,6 +970,7 @@ void fillEchoMessageData(DOMMSG *m, int max) {
 int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq) {
   int n = efreq+mfreq+hfreq+dfreq+sfreq;
   int denom = n;
+  if(denom == 0) return NULL;
   int * a = malloc(n*sizeof(int));
   if(!a) return NULL;
   int i;
@@ -974,13 +1005,13 @@ int * getCycle(int efreq, int mfreq, int hfreq, int dfreq, int sfreq) {
 
 int endRun(int filep, int bufsiz, int dopulser) {
   int r;
-
+  fprintf(stderr,"Ending run... ");
   if((r=domsg(filep, bufsiz, 10000,
               EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "")) != 0) {
     fprintf(stderr,"EXPCONTROL_END_RUN failed: %d\n", r);
     return 1;
   }
-
+  fprintf(stderr,"OK.\n");
   if(dopulser) {
     fprintf(stderr,"Turning off front-end pulser... ");
     if((r=domsg(filep, bufsiz, 10000, DOM_SLOW_CONTROL, DSC_SET_PULSER_OFF, ""))) {
@@ -1076,11 +1107,6 @@ int beginRun(int filep, int bufsiz, int dopulser) {
     fprintf(stderr,"OK.\n");
   }
 
-  fprintf(stderr,"Forcing run stop: ");
-  r=domsg(filep, bufsiz, 10000,
-	  EXPERIMENT_CONTROL, EXPCONTROL_END_RUN, "");
-  fprintf(stderr,"%d.\n", r);
-
   fprintf(stderr,"Starting run... ");
   if((r=domsg(filep, bufsiz, 10000,
 	      EXPERIMENT_CONTROL, EXPCONTROL_BEGIN_RUN, "")) != 0) {
@@ -1159,10 +1185,11 @@ int setUpPedsAndThresholds(int filep, int bufsiz, int dothresh,
   /* Read out the pedestal averages -- too complicated to use domsg()... */
   DOMMSG * pedAvgs  = newGetPedestalAveragesMsg();
   if(pedAvgs == NULL) return 1;
-  DOMMSG * msgReply = (DOMMSG *) malloc(sizeof(DOMMSG));
+  DOMMSG * msgReply = newMsg();
   if(msgReply == NULL) { free(pedAvgs); return 1; }
 
-  if(sendAndReceive(filep, bufsiz, pedAvgs, msgReply, 10000)) {
+  int msgStat;
+  if(sendAndReceive(filep, bufsiz, pedAvgs, msgReply, 10000, &msgStat) || msgStat != 1) {
     fprintf(stderr,"Send-and-receive getPedestalAverages failed.\n");
     free(pedAvgs);
     return 1;
@@ -1417,9 +1444,68 @@ int setUpTrigMode(int filep, int bufsiz, int trigMode) {
 }
 
 int reportableDelta(int dtsec, int lastdtsec) {
-  return dtsec != lastdtsec && dtsec != 0
-    && ((int)dtsec <= 10 /* Periodic criteria */
-	|| !(((dtsec)%10) && dtsec<100)
-	|| !(((dtsec)%100)&& dtsec<1000)
-	||  !((dtsec)%1000));
+  return (dtsec != lastdtsec && dtsec != 0
+    && ((dtsec <= 10 /* Periodic criteria */
+	|| (!((dtsec)%10) && dtsec<100)
+	|| (!((dtsec)%100)&& dtsec<1000)
+	|| (!((dtsec)%1000)))));
+}
+
+void getTimes(struct timeval * tstart, int * dtsec, int *dtusec, unsigned long long * dt) {
+    struct timeval tnow;
+    gettimeofday(&tnow, NULL);
+    *dt = (tnow.tv_sec - tstart->tv_sec)*1000000 
+      + (tnow.tv_usec - tstart->tv_usec);
+    *dtsec = tnow.tv_sec - tstart->tv_sec;
+    *dtusec = tnow.tv_usec - tstart->tv_usec;
+    if(*dtusec < 0) {
+      *dtusec += 1000000;
+      *dtsec --;
+    }
+}
+
+int doSnCrashTest(int filep, int bufsiz) {
+  int r;
+  int sndeadt = 6400, snmode = 0;
+#define OUT(a) fprintf(stderr,a"\n")
+  OUT("DSC_ENABLE_SN");
+  if((r=domsg(filep, bufsiz, 10000,
+              DOM_SLOW_CONTROL, DSC_ENABLE_SN, "-LC", sndeadt, snmode)) != 0) {
+    fprintf(stderr,"Warning: DSC_ENABLE_SN failed: %d\n", r);
+  }
+
+  fprintf(stderr,"DATA_ACC_GET_SN_DATA...");
+  DOMMSG * getSNDataMsg = newGetSNDataMsg();
+  DOMMSG * getMoniMsg   = newMoniMsg();
+  DOMMSG * msgReply     = newMsg();
+  long long i; for(i=0; i<1000000; i++) {
+    int len = sendMsg(filep, getSNDataMsg, 100);
+    if(len != 8) {
+      fprintf(stderr,"DATA_ACC_GET_SN_DATA: short write (%d bytes)\n", len);
+      return 1;
+    }
+    len = getMsg(filep, msgReply, bufsiz, 1000);
+    if(len < 8) {
+      fprintf(stderr,"DATA_ACC_GET_SN_DATA: Questionable length on read: %d bytes!\n", len);
+    }
+    len = sendMsg(filep, getMoniMsg, 100);
+    if(len != 8) {
+      fprintf(stderr,"Get Moni Msg: short write (%d bytes)\n", len);
+      return 1;
+    }
+    len = getMsg(filep, msgReply, bufsiz, 1000);
+    if(len < 8) {
+      fprintf(stderr,"Get Moni Msg: Questionable length on read: %d bytes!\n", len);
+    }
+
+    if(!(i%600)) fprintf(stderr,".");
+  }
+  OUT("\nDSC_DISABLE_SN");
+  if((r=domsg(filep, bufsiz, 10000,
+              DOM_SLOW_CONTROL, DSC_DISABLE_SN, "")) != 0) {
+    fprintf(stderr,"DSC_ENABLE_SN failed: %d\n", r);
+    return 1;
+  }
+
+  return 0;
 }

@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.32 2005-06-02 20:31:10 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.33 2005-06-13 21:51:29 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -11,14 +11,19 @@ use Getopt::Long;
 sub testDOM;     sub loadFPGA;     sub docmd;       sub hadError;      
 sub hadWarning;  sub versionTest;  sub mydie;
 sub endTests;    sub usage;        sub collectDoms; sub getDOMIDTest;
-sub haveLogs;    sub removeLogs;   sub reapKids;    sub killKids;
+sub reapKids;    sub killKids;     sub shortEchoTest;                
 sub logmsg;      sub logOf;        sub asciiMoniTest;
 sub checkProcs;  sub filly;        sub doMultiplePedestalFetch;
 sub flasherVersionTest;            sub setHVTest;
-sub shortEchoTest;                 sub configMoniTest;
 sub configMoniTest;                sub flasherTest;
 sub collectPulserDataTestNoLC;     sub SNCountsOnly;
 sub SNCountsAndHits;               sub collectCPUTrigDataTestNoLC;
+sub SNCountsAndHits_noHitReadout;  sub SNCountsAndHits1Hz;
+sub SNCountsAndHits_noMoni;        sub SNCountsAndHits4kHz;
+sub SNCountsAndHits1Hz_noHitReadout;
+sub SNCountsAndHits4kHz_noHitReadout;
+sub SNCountsOnly_noReadout;
+
 sub collectDiscTrigDataCompressedForced;
 sub collectDiscTrigDataCompressedPulser;
 sub collectDiscTrigDataTestNoLC;
@@ -37,6 +42,7 @@ my $pulserDAC    = 11;
 my $pulserAmp    = 500;
 my $defaultdur   = 10; # Does all tests at least once
 my $duration     = $defaultdur;
+my $dorandom     = 0;
 my $defaultDACs  = "-S0,850 -S1,2097 -S2,600 -S3,2048 "
     .              "-S4,850 -S5,2097 -S6,600 -S7,1925 "
     .              "-S10,700 -S13,800 -S14,1023 -S15,1023";
@@ -44,24 +50,27 @@ my $dat          = "/usr/local/bin/domapptest";
     
 my ($help, $image, $showcmds, $loadfpga, $detailed,
     $dohv, $doflasher, $dolong, $rmlogs, $compOnly);
+my $snmode       = 4;
+my $datDuration  = 4;
 
-my $loops = 1;
 
 GetOptions("help|h"          => \$help,
 	   "upload|u=s"      => \$image,
-	   "showcmds|s"      => \$showcmds,
+	   "s"               => \$showcmds,
            "dolong|o"        => \$dolong,
            "detailed|d"      => \$detailed,
 	   "loadfpga|l=s"    => \$loadfpga,
            "dohv|V"          => \$dohv,
            "dat|A=s"         => \$dat,
-           "loops|N=i"       => \$loops,
-	   "rmlogs|r"        => \$rmlogs,
 	   "duration|t=i"    => \$duration,
+	   "x=i"             => \$datDuration,
+	   "R"               => \$dorandom,
 	   "componly|C"      => \$compOnly,
+	   "sn=i"            => \$snmode,
            "doflasher|F"     => \$doflasher) || die usage;
 
 die usage if $help;
+die usage if $snmode < 0 || $snmode > 5;
 
 die "Can't find domapptest program $dat.\n" unless -e $dat;
 
@@ -70,11 +79,6 @@ if(defined $image) {
 	unless -f $image;
 }
 
-if($rmlogs) {
-    removeLogs;
-} else {
-    die "Log files exist; rm dmt????.log first, or use -r option.\n" if haveLogs;
-}
 
 my %card;
 my %pair;
@@ -128,7 +132,19 @@ print "\nResults to appear in directory $testdir\n\n";
 my $kid = fork;
 mydie "Backgrounding fork failed!\n" unless defined $kid;
 if($kid) {
-    print LOG "Tests running in background.\n";
+    print LOG "Test sequence $testdir\n\n";
+    print LOG "Parameters:\n";
+    print LOG "DoLong         = ".($dolong?"TRUE":"false")."\n";
+    print LOG "FPGA           = ".(defined $loadfpga?"$loadfpga":"flash default")."\n";
+    print LOG "Test Pgm       = $dat\n";
+    print LOG "Total duration = $duration sec.\n";
+    print LOG "Test durations = $datDuration sec.\n";
+    print LOG "DoRandomize    = ".($dorandom?"TRUE":"false")."\n";
+    print LOG "DoHV           = ".($dohv?"TRUE":"false")."\n";
+    print LOG "DoFlasher      = ".($doflasher?"TRUE":"false")."\n";
+    print LOG "Compr. only    = ".($compOnly?"TRUE":"false")."\n";
+    print LOG "SN mode        = $snmode\n";
+    print LOG "Tests running in background.... come back in $duration seconds!\n";
     exit;
 }
 
@@ -204,6 +220,7 @@ sub resetState {
         return 0 unless(upload($dom, $image));
     } else {
         return 0 unless domappmode($dom);
+	sleep 4; # Should let FPGA reload before doing anything else
     }
 }
 
@@ -213,11 +230,35 @@ sub testDOM {
    
     return 0 unless resetState $dom;
 
-    # Start tests in fixed order, then randomize
+    # Start tests in fixed order, then randomize if desired
     my @tests;
     if($compOnly) {
 	push(@tests, sub { collectDiscTrigDataCompressedForced($dom);});
 	push(@tests, sub { collectDiscTrigDataCompressedPulser($dom);});
+    } elsif($snmode == 1) {
+#	push(@tests, sub { SNCountsOnly($dom);                       });
+	push(@tests, sub { SNCountsOnlyDoMoni($dom);                 });
+    } elsif($snmode == 2) {
+	push(@tests, sub { SNCountsAndHits($dom);                    });
+    } elsif($snmode == 3) {
+	push(@tests, sub { SNCountsOnly($dom);                       });
+        push(@tests, sub { SNCountsAndHits($dom);                    });
+    } elsif($snmode == 6) {
+        push(@tests, sub { SNCountsOnly_noReadout($dom);             });
+	push(@tests, sub { resetState($dom);                         });
+    } elsif($snmode == 5) {
+        push(@tests, sub { SNCountsOnly_noReadout($dom);             });
+        push(@tests, sub { SNCountsOnly($dom);                       });
+	push(@tests, sub { SNCountsAndHits1Hz_noHitReadout($dom);    });
+	push(@tests, sub { SNCountsAndHits1Hz($dom);                 });
+	push(@tests, sub { SNCountsAndHits_noReadoutNoMoni($dom);    });
+	push(@tests, sub { SNCountsAndHits_noHitReadout($dom);       });
+	push(@tests, sub { SNCountsAndHits_noReadout($dom);          });
+	push(@tests, sub { SNCountsAndHits_noMoni($dom);             });
+        push(@tests, sub { SNCountsAndHits($dom);                    });
+	push(@tests, sub { SNCountsAndHits4kHz_noHitReadout($dom);   });
+	push(@tests, sub { SNCountsAndHits4kHz($dom);                });
+	push(@tests, sub { resetState($dom);                         });
     } else {
 	push(@tests, sub { versionTest $dom;                         });
 	push(@tests, sub { getDOMIDTest($dom);                       });
@@ -228,8 +269,8 @@ sub testDOM {
 	push(@tests, sub { configMoniTest($dom, "CF");               });
 	push(@tests, sub { configMoniTest($dom, "HW");               });
 	push(@tests, sub { flasherTest($dom)                         }) if $doflasher;
-	push(@tests, sub { SNCountsOnly($dom);                       });
-	push(@tests, sub { SNCountsAndHits($dom);                    });
+	push(@tests, sub { SNCountsOnly($dom);                       }) unless $snmode == 0;
+	push(@tests, sub { SNCountsAndHits($dom);                    }) unless $snmode == 0;
 	push(@tests, sub { collectPulserDataTestNoLC($dom);          });
 	push(@tests, sub { collectCPUTrigDataTestNoLC($dom);         });
 	push(@tests, sub { collectDiscTrigDataCompressedForced($dom);});
@@ -253,11 +294,18 @@ sub testDOM {
     }
     # Random
     while(time-$t0 < $duration) {
-	my $itest = int(rand((scalar @tests)+1));
-	if($itest > (scalar @tests)-1) { $itest = (scalar @tests)-1; }
-	my $test = $tests[$itest];
-	$n++;
-	$nf++ unless &$test;
+	if($dorandom) {
+	    my $itest = int(rand((scalar @tests)+1));
+	    if($itest > (scalar @tests)-1) { $itest = (scalar @tests)-1; }
+	    my $test = $tests[$itest];
+	    $n++;
+	    $nf++ unless &$test;
+	} else {
+	    for(@tests) {
+		$n++;
+		$nf++ unless &$_;
+	    }
+	}
     }
     logmsg("ending tests, $n total, $nf failures.\n");
 }
@@ -272,16 +320,54 @@ use constant CMP_RG   => 1;
 sub SNCountsOnly {
     my $dom = shift; mydie("missing arg") unless defined $dom;
     my $snfile = "SNCounts_$dom.sn";
-    my $cmd = "$dat $defaultDACs -d 4 -p -P 500 -K 1,0,6400,$snfile -T 2 $dom 2>&1";
+    my $testname = "sn-counts-only";
+    my $cmd = "$dat $defaultDACs -d $datDuration -p -P 500 -K 1,0,6400,$snfile -T 2 $dom 2>&1";
     my $result = docmd $cmd;
     if($result =~ /ERROR/) {
-	return logmsg "sn-counts-only FAIL: domapptest error\n$result\n";
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
     } 
     if($result !~ /Done \((\d+) usec\)\./) {
-	return logmsg "sn-counts-only FAIL: domapptest error\n$result\n";
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
     }
     my $details = $detailed?"(domapptest finished)":"";
-    logmsg "sn-counts-only $details\n";
+    logmsg "$testname $details\n";
+    return 1;
+}
+
+sub SNCountsOnlyDoMoni {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    my $snfile = "SNCountsMoni_$dom.sn";
+    my $testname = "sn-counts-only-domoni";
+    my $monFile  = "SNCountsMoni_$dom.moni";
+    my $cmd = "$dat $defaultDACs -d $datDuration -p -P 500 -m $monFile -w 1 -f 1 -M1 "
+	.     "-K 1,0,6400,$snfile -T 2 $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result =~ /ERROR/) {
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
+    } 
+    if($result !~ /Done \((\d+) usec\)\./) {
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
+    }
+    my $details = $detailed?"(domapptest finished)":"";
+    logmsg "$testname $details\n";
+    return 1;
+}
+
+
+sub SNCountsOnly_noReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    my $testname = "sn-counts-only-noread";
+    my $snfile = "SNCounts_$dom.sn";
+    my $cmd = "$dat $defaultDACs -d $datDuration -p -P 500 -K 0,0,6400,$snfile -T 2 $dom 2>&1";
+    my $result = docmd $cmd;
+    if($result =~ /ERROR/) {
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
+    } 
+    if($result !~ /Done \((\d+) usec\)\./) {
+	return logmsg "$testname FAIL: domapptest error\n$result\n";
+    }
+    my $details = $detailed?"(domapptest finished)":"";
+    logmsg "$testname $details\n";
     return 1;
 }
 
@@ -290,20 +376,189 @@ sub SNCountsAndHits {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "SNTrigger",
+				Duration    => $datDuration,
                                 DoPulser    => 1,
 				Threshold   => $speThresh,
                                 PulserRate  => 500,
                                 Compression => CMP_NONE,
                                 Format      => FMT_ENG,
+                                doSN        => 1,
                                 SNDeadTime  => 6400,
                                 skipRateChk => 1);
 }
+
+
+sub SNCountsAndHits1Hz {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTrigger1Hz",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 1,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                skipRateChk => 1);
+}
+
+
+sub SNCountsAndHits4kHz {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTrigger4kHz",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 4000,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                skipRateChk => 1);
+}
+
+
+
+sub SNCountsAndHits1Hz_noHitReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTrigger1HzNoHits",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 1,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 0,
+                                skipRateChk => 1);
+}
+
+
+sub SNCountsAndHits4kHz_noHitReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTrigger4kHzNoHits",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 4000,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 0,
+                                skipRateChk => 1);
+}
+
+sub SNCountsAndHits_noReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTriggerNoReadNoCnts",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 500,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 0,
+                                CountFreq   => 0,
+                                skipRateChk => 1);
+}
+
+
+sub SNCountsAndHits_noReadoutNoMoni {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTriggerNoReadNoMoni",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 500,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 0,
+                                CountFreq   => 0,
+                                MoniFreq    => 0,
+                                skipRateChk => 1);
+}
+
+
+sub SNCountsAndHits_noMoni {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTriggerNoMoni",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 500,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                MoniFreq    => 0,
+                                skipRateChk => 1);
+}
+
+
+sub SNCountsAndHits_noHitReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTriggerNoReadHits",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 500,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 0,
+                                skipRateChk => 1);
+}
+
+
+
+sub SNCountsAndHits_noCountReadout {
+    my $dom = shift; mydie("missing arg") unless defined $dom;
+    return doShortHitCollection(DOM         => $dom,
+                                Trig        => DISCTRIG,
+                                Name        => "SNTriggerNoCounts",
+				Duration    => $datDuration,
+                                DoPulser    => 1,
+				Threshold   => $speThresh,
+                                PulserRate  => 500,
+                                Compression => CMP_NONE,
+                                Format      => FMT_ENG,
+                                doSN        => 1,
+                                SNDeadTime  => 6400,
+                                HitFreq     => 1,
+                                CountFreq   => 0,
+                                skipRateChk => 1);
+}
+
 
 sub collectCPUTrigDataTestNoLC {
     my $dom = shift; mydie("missing arg") unless defined $dom;
     return doShortHitCollection(DOM         => $dom, 
 				Trig        => CPUTRIG,
 				Name        => "cpuTrigger", 
+				Duration    => $datDuration,
 				DoPulser    => 0,
 				Threshold   => 0, 
 				PulserRate  => 1,
@@ -316,6 +571,7 @@ sub collectDiscTrigDataTestNoLC {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "discTrigger",
+				Duration    => $datDuration,
                                 DoPulser    => 0,
                                 Threshold   => $speThresh,
                                 PulserRate  => 1,
@@ -328,6 +584,7 @@ sub collectPulserDataTestNoLC {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => DISCTRIG,
                                 Name        => "pulserTrigger",
+				Duration    => $datDuration,
                                 DoPulser    => 1,
                                 Threshold   => $speThresh,
                                 PulserRate  => 10,
@@ -341,6 +598,7 @@ sub varyHeartbeatRateTestNoLC {
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "heartbeat_".$rate."Hz",
+				Duration    => $datDuration,
 				DoPulser    => 0,
 				Threshold   => $speThresh,
 				PulserRate  => $rate,
@@ -353,6 +611,7 @@ sub collectDiscTrigDataCompressedForced {
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprForced",
+				Duration    => $datDuration,
 				DoPulser    => 0,
 				Threshold   => $speThresh,
 				PulserRate  => 2000,
@@ -365,6 +624,7 @@ sub collectDiscTrigDataCompressedPulser {
     return doShortHitCollection(DOM         => $dom,
 				Trig        => DISCTRIG,
 				Name        => "comprPulsr",
+				Duration    => $datDuration,
 				DoPulser    => 1,
 				Threshold   => $speThresh,
 				PulserRate  => 2000,
@@ -458,7 +718,7 @@ sub setHVTest {
 
 sub shortEchoTest {
     my $dom = shift;
-    my $cmd = "$dat -d2 -E1 $dom 2>&1";
+    my $cmd = "$dat -d$datDuration -E1 $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {        
 	return logmsg "echo FAIL: $cmd\n$result\n";
@@ -474,7 +734,7 @@ sub LCMoniTest {
     my $win0 = 100;
     my $win1 = 200;
     my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
-    my $cmd = "$dat -d1 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
+    my $cmd = "$dat -G -d2 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
 	return logmsg "moni state chg. ($mode) FAIL: domapptest error $_\n"
@@ -565,7 +825,7 @@ sub configMoniTest {
     mydie unless $pat == "CF" || $pat == "HW";
     my $moniFile = "$pat"."_$dom.moni";
     my $patsw = ($pat=="CF")?"-f":"-w";
-    my $cmd = "$dat -d2 -M1 $patsw 1 -m $moniFile $dom 2>&1";
+    my $cmd = "$dat -G -d2 -M1 $patsw 1 -m $moniFile $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
 	return logmsg "$pat monitoring: FAIL: domapptest error: $cmd\n$result\n";
@@ -590,7 +850,7 @@ sub configMoniTest {
 sub domappmode { 
     my $dom = shift;
     my $cmd = "/usr/local/bin/se.pl $dom domapp domapp 2>&1";
-    my $result = `$cmd`;
+    my $result = docmd $cmd;
     if($result !~ /SUCCESS/) {
 	return logmsg("domapp change state FAIL.\nResult:\n$result\n\n");
     } else {
@@ -671,6 +931,7 @@ sub docmd {
 	exit(1);
     }
     my $rez = `cat $outfile`;
+    logmsg "$rez" if defined $showcmds;
     unlink $outfile; 
     return $rez;
 }
@@ -679,30 +940,34 @@ sub hadError { my $s = shift; return 1 if ($s =~ /error/i); return 0; }
 sub hadWarning { my $s = shift; return 1 if ($s =~ /warning/i); return 0; }
 
 sub doShortHitCollection {
-    my %args     = @_;
-    my $dom      = $args{DOM};         mydie("missing arg") unless defined $dom;
-    my $type     = $args{Trig};        mydie("missing arg") unless defined $type;
-    my $name     = $args{Name};        mydie("missing arg") unless defined $name;
-    my $testname = "hits $name trig=$type";
-    my $lcup     = $args{LcUp};        $lcup = 0 unless defined $lcup;
-    my $lcdn     = $args{LcDn};        $lcdn = 0 unless defined $lcdn;
-    my $dur      = $args{Duration};    $dur  = 4 unless defined $dur;
-    my $puls     = $args{DoPulser};    mydie("missing arg") unless defined $puls;
-    my $thresh   = $args{Threshold};   mydie("missing arg") unless defined $thresh;
-    my $dofb     = $args{DoFlasher};   $dofb   = 0  unless defined $dofb;
-    my $bright   = $args{FBBright};    $bright = 1  unless defined $bright;
-    my $win      = $args{FBWin};       $win    = 10 unless defined $win;
-    my $delay    = $args{FBDelay};     $delay  = 0  unless defined $delay;
-    my $mask     = $args{FBMask};      $mask   = 1  unless defined $mask;
-    my $pulsrate = $args{PulserRate};  # Leave undefined to accept default
-    my $compMode = $args{Compression}; # ""
-    my $dataFmt  = $args{Format};      # ""
-    my $SNDeadT  = $args{SNDeadTime};  # ""
+    my %args        = @_;
+    my $dom         = $args{DOM};         mydie("missing arg") unless defined $dom;
+    my $type        = $args{Trig};        mydie("missing arg") unless defined $type;
+    my $name        = $args{Name};        mydie("missing arg") unless defined $name;
+    my $testname    = "hits $name trig=$type";
+    my $lcup        = $args{LcUp};        $lcup = 0 unless defined $lcup;
+    my $lcdn        = $args{LcDn};        $lcdn = 0 unless defined $lcdn;
+    my $dur         = $args{Duration};    $dur  = 4 unless defined $dur;
+    my $puls        = $args{DoPulser};    mydie("missing arg") unless defined $puls;
+    my $thresh      = $args{Threshold};   mydie("missing arg") unless defined $thresh;
+    my $dofb        = $args{DoFlasher};   $dofb   = 0  unless defined $dofb;
+    my $bright      = $args{FBBright};    $bright = 1  unless defined $bright;
+    my $win         = $args{FBWin};       $win    = 10 unless defined $win;
+    my $delay       = $args{FBDelay};     $delay  = 0  unless defined $delay;
+    my $mask        = $args{FBMask};      $mask   = 1  unless defined $mask;
+    my $pulsrate    = $args{PulserRate};  # Leave undefined to accept default
+    my $compMode    = $args{Compression}; # ""
+    my $dataFmt     = $args{Format};      # ""
+    my $doSN        = $args{doSN};        # ""
+    my $SNDeadT     = $args{SNDeadTime};  # ""
+    my $hitFreq     = $args{HitFreq};    $hitFreq   = 1 unless defined $hitFreq;
+    my $moniFreq    = $args{MoniFreq};   $moniFreq  = 1 unless defined $moniFreq;
+    my $countFreq   = $args{CountFreq};  $countFreq = 1 unless defined $countFreq;
     my $skipRateChk = $args{skipRateChk};
 
     my $engFile = "short_$name"."_$dom.hits";
     my $monFile = "short_$name"."_$dom.moni";
-    my $snFile  = "short_$name"."_$dom.sn"; # Only used if SNDeadT given
+    my $snFile  = "short_$name"."_$dom.sn"; # Only used if $doSN
     unlink $engFile if -e $engFile;
     unlink $monFile if -e $monFile;
     my $mode    = 0;
@@ -718,7 +983,8 @@ sub doShortHitCollection {
     my $fmtArg      = (defined $dataFmt) ? "-X $dataFmt" : "";
     my $compArg     = (defined $compMode) ? "-Z $compMode" : "";
     my $threshArg   = "";
-    my $snArg       = (defined $SNDeadT) ? "-K 1,0,$SNDeadT,$snFile" : "";
+    my $snArg       = $doSN ? "-K $countFreq,0,$SNDeadT,$snFile" : "";
+    my $moniArg     = ($moniFreq > 0)?"-w 1 -f 1 -M$moniFreq -m $monFile":"";
     if(defined $compMode && $compMode == CMP_RG) {
 	$threshArg = "-R 100,100,100,100,100";
     }
@@ -733,27 +999,30 @@ sub doShortHitCollection {
     }
     my $cmd       = "$dat -G -d $dur $defaultDACs -S$speThreshDAC,$thresh "
 	.           " $pulserArg $pulsrateArg $fmtArg $compArg $threshArg $snArg "
-	.           "-w 1 -f 1 -H1 -M1 -m $monFile -T $type $runArg -i $engFile $lcstr $dom 2>&1";
+	.           "$moniArg -H$hitFreq -T $type $runArg "
+	.           "-i $engFile $lcstr $dom 2>&1";
 
     my $result    = docmd $cmd;
 
     # Tenaciously fetch monitoring stream
     my $moni;
-    if(! -f $monFile) {
-	$moni = "ERROR: Monitoring file $monFile doesn't exist; DOM hosed?\n";
-    } else {
-	$moni      = `decodemoni -v $monFile 2>&1`; chomp $moni;
-	if($moni eq "") {
-	    my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
-	    my $result     = docmd $getMoniCmd;
-	    if(! -f "last.moni") {
-		$moni = "ERROR: Original monitoring stream is empty and "
-		    .   "secondary stream is missing; DOM hosed?\n";
-	    } else {
-		$moni = "[original EMPTY -- following was fetched "
-		    .   "from domapp a second time around:]\n"
-		    .   $result
-		    .   `decodemoni -v last.moni`;
+    if($moniFreq > 0) {
+	if(! -f $monFile) {
+	    $moni = "ERROR: Monitoring file $monFile doesn't exist; DOM hosed?\n";
+	} else {
+	    $moni      = `decodemoni -v $monFile 2>&1`; chomp $moni;
+	    if($moni eq "") {
+		my $getMoniCmd = "$dat -d 1 -M1 -m last.moni $dom 2>&1";
+		my $result     = docmd $getMoniCmd;
+		if(! -f "last.moni") {
+		    $moni = "ERROR: Original monitoring stream is empty and "
+			.   "secondary stream is missing; DOM hosed?\n";
+		} else {
+		    $moni = "[original EMPTY -- following was fetched "
+			.   "from domapp a second time around:]\n"
+			.   $result
+			.   `decodemoni -v last.moni`;
+		}
 	    }
 	}
     }
@@ -767,7 +1036,7 @@ sub doShortHitCollection {
 	"Monitoring output:\n$moni\n";
     
     if(hadError $moni || hadWarning $moni) {
-	return logmsg "$testname FAIL: error or warning in $monFile\n$summary";
+	return logmsg "$testname FAIL: error or warning in or reading $monFile:\n$summary";
     }
     if($result !~ /Done \((\d+) usec\)\./) {
 	return logmsg "$testname FAIL: domapptest finished abnormally\n$summary";
@@ -785,7 +1054,6 @@ sub doShortHitCollection {
 	my $nhits   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
 	if($nhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	    my $nhits = $1;
-	    my $ratestr;
             my $evrate = $nhits/$dur;
             if($evrate < $pulsrate/3 || $evrate > $pulsrate*3) {
 		return logmsg "$testname FAIL: measured forced trigger rate ($evrate Hz) ".
@@ -800,7 +1068,7 @@ sub doShortHitCollection {
 	}
     }
     # Check for SPE rate consistency if rate is defined and pulser in use:
-    if($dataFmt == 0 && defined $pulsrate && $puls) {
+    if($dataFmt == 0 && $moniFreq > 0 && defined $pulsrate && $puls) {
 	my @moni   = `decodemoni -v $monFile | grep HW`;
 	my $spesum = 0;
 	my $nspe   = 0;
@@ -839,7 +1107,7 @@ sub doShortHitCollection {
     # If asked for, look for supernova data
     my $SNbins        = 0;
     my $SNcountsTotal = 0;
-    if(defined $SNDeadT) {
+    if($doSN && $countFreq > 0) {
 	my @snData = `/usr/local/bin/decodesn $snFile 2>&1`;
 	for(@snData) {
 	    if(/(\d+) counts/) {
@@ -855,7 +1123,7 @@ sub doShortHitCollection {
 	}
     }
 
-    if($dataFmt == 0) {
+    if($dataFmt == 0 && $hitFreq > 0) {
 	my @typelines = `/usr/local/bin/decodeeng $engFile 2>&1 | grep type`;
 	my $chkEngResult = checkEngTrigs($type, 0, $lcup, $lcdn, $puls, @typelines);
 	if($chkEngResult ne "SUCCESS") {
@@ -864,12 +1132,15 @@ sub doShortHitCollection {
 	}
     }
 
-    if($nhitsline =~ /^\s*(\d+)$/ && $1 > 0) {
-	my $nhits = $1;
-	my $ratestr;
-	logmsg "$testname nhits=$nhits snbins=$SNbins sntot=$SNcountsTotal\n";
+    if($nhitsline !~ /^\s*(\d+)$/) {
+        return logmsg "$testname FAIL: didn't get any hit data\n$summary\n";
     } else {
-	return logmsg "$testname FAIL: didn't get any hit data\n$summary\n";
+	my $nhits = $1;
+	if($hitFreq==0 || $nhits > 0) {
+	    logmsg "$testname nhits=$nhits snbins=$SNbins sntot=$SNcountsTotal\n";
+	} else {
+	    return logmsg "$testname FAIL, nhits=$nhits\n$summary\n";
+	}
     }
 
     return 1;
@@ -899,6 +1170,7 @@ sub flasherTest {
     return doShortHitCollection(DOM         => $dom,
                                 Trig        => CPUTRIG,
                                 Name        => "Flasher",
+				Duration    => $datDuration,
                                 DoPulser    => 0,
                                 Threshold   => 0,
 				DoFlasher   => 1,
@@ -967,49 +1239,6 @@ sub collectDoms {
     print "\n";
 }
 
-sub usage { return <<EOF;
-Usage: $O [options] <dom0> <dom1> ...
-
-    DOMs can be \"all\" or, e.g., \"01a, 10b, 31a\"
-    Must power on and be in iceboot first.
-
-Options: 
-     -u <image>:  Upload <image> rather testing flash image
-     -s:          Show commands issued to domapptest
-     -d:          Detailed report about what worked, instead
-                  of just what didn't work.
-     -F:          Run flasher tests (SEALED, DARK DOMs ONLY)
-     -V:          Run tests requiring HV (SEALED, DARK DOMs ONLY)
-     -A <prog>:   Use <prog> rather than $dat
-     -l <name>:   Load FPGA image <name> from flash before test
-     -N <loops>:  Iterate <loops> times
-     -r:          Remove error log files before running
-     -t <sec>:    Run for <sec> seconds (min/default: run all tests
-                  sequentially, once)
-     -o:          Perform long duration tests (normally skipped)
-     -C:          Test only compressed data (pedestal collection, ...)
-
-If -V or -F options are not given, only tests appropriate for a
-bare DOM mainboard are given.
-
-EOF
-;
-}
-
-sub haveLogs {
-    my @logs = <dmt????.log>;
-    return (@logs>0)?1:0;
-}
-
-sub removeLogs {
-    my @logs = <dmt????.log>;
-    for(@logs) {
-	print "Removing $_... ";
-	unlink($_) || mydie("Can't remove log file $_: $!\n");
-	print "OK.\n";
-    }
-}
-
 sub reapKids {
     use POSIX ":sys_wait_h";
     my $kid;
@@ -1062,5 +1291,42 @@ sub mydie {
     print LOG "$O: FATAL ERROR ($m)\n"; 
     die $m; 
 }
+
+sub usage { return <<EOF;
+Usage: $O [options] <dom0> <dom1> ...
+
+    DOMs can be \"all\" or, e.g., \"01a, 10b, 31a\"
+    Must power on and be in iceboot first.
+
+Options: 
+     -u <image>:  Upload <image> rather testing flash image
+     -s:          Show commands issued to domapptest
+     -d:          Detailed report about what worked, instead
+                  of just what didn't work.
+     -F:          Run flasher tests (SEALED, DARK DOMs ONLY)
+     -V:          Run tests requiring HV (SEALED, DARK DOMs ONLY)
+     -A <prog>:   Use <prog> rather than $dat
+     -l <name>:   Load FPGA image <name> from flash before test
+     -t <sec>:    Run for <sec> seconds (min/default: run all tests
+                  sequentially, once)
+     -x <sec>:    Default duration for each data-taking run
+     -o:          Perform long duration tests (normally skipped)
+     -C:          Test only compressed data (pedestal collection, ...)
+     -R:          Randomize tests after first sequential set is complete
+     -sn n:       Test supernova data collection:
+                  0 = skip all supernova tests
+                  1 = test SN scaler collection only
+                  2 = test scaler collection + hit data only
+                  3 = test modes 1 (counts only) and 2 (counts+hits) only
+                      (no other tests)
+                  4 = (default) allow SN tests and other tests as well
+
+If -V or -F options are not given, only tests appropriate for a
+bare DOM mainboard are given.
+
+EOF
+;
+}
+
 
 __END__
