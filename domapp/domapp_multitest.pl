@@ -2,7 +2,7 @@
 
 # John Jacobsen, NPX Designs, Inc., jacobsen\@npxdesigns.com
 # Started: Sat Nov 20 13:18:25 2004
-# $Id: domapp_multitest.pl,v 1.33 2005-06-13 21:51:29 jacobsen Exp $
+# $Id: domapp_multitest.pl,v 1.34 2005-06-14 23:19:22 jacobsen Exp $
 
 package DOMAPP_MULTITEST;
 use strict;
@@ -51,7 +51,7 @@ my $dat          = "/usr/local/bin/domapptest";
 my ($help, $image, $showcmds, $loadfpga, $detailed,
     $dohv, $doflasher, $dolong, $rmlogs, $compOnly);
 my $snmode       = 4;
-my $datDuration  = 4;
+my $datDuration  = 6;
 
 
 GetOptions("help|h"          => \$help,
@@ -144,7 +144,7 @@ if($kid) {
     print LOG "DoFlasher      = ".($doflasher?"TRUE":"false")."\n";
     print LOG "Compr. only    = ".($compOnly?"TRUE":"false")."\n";
     print LOG "SN mode        = $snmode\n";
-    print LOG "Tests running in background.... come back in $duration seconds!\n";
+    print LOG "Tests running in background.\n";
     exit;
 }
 
@@ -731,28 +731,32 @@ sub shortEchoTest {
 sub LCMoniTest {
     my $dom = shift; mydie("missing arg") unless defined $dom;
     my $mode = shift; mydie("missing arg") unless defined $mode;
+    my $testname = "moni state chg. ($mode)";
     my $win0 = 100;
     my $win1 = 200;
     my $moniFile = "lc_state_chg_mode$mode"."_$dom.moni";
-    my $cmd = "$dat -G -d2 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
+    my $cmd = "$dat -G -d4 -M1 -m $moniFile -I $mode,$win0,$win1 $dom 2>&1";
     my $result = docmd $cmd;
     if($result !~ /Done \((\d+) usec\)\./) {
-	return logmsg "moni state chg. ($mode) FAIL: domapptest error $_\n"
+	return logmsg "$testname FAIL: domapptest error $_\n"
 	    .         "Command: $cmd\n"
 	    .         "Result:\n$result\n";
     }
     my @dmtext = `/usr/local/bin/decodemoni -v $moniFile 2>&1`;
+    if(@dmtext == 0) {
+	return logmsg "$testname FAIL: no moni records in $moniFile!\n";
+    }
     # print @dmtext;
     my $gotwin = 0;
     my $gotmode = 0;
     for(@dmtext) {
 	if(hadError $_ || hadWarning $_) {
-	    return logmsg "moni state chg. ($mode) FAIL: moni error $_\n";
+	    return logmsg "$testname FAIL: moni error $_\n";
 	}
 # STATE CHANGE: LC WIN <- (100, 100)
 	if(/LC WIN <- \((\d+), (\d+)\)/) {
 	    if($1 ne $win0 || $2 ne $win1) {
-		return logmsg "moni state chg. ($mode) FAIL: "
+		return logmsg "$testname FAIL: "
 		    .         "window mismatch ($1 vs $win0, $2 vs $win1); "
 		    .          "Line: $_ File: $moniFile\n";
 	    } else {
@@ -766,15 +770,15 @@ sub LCMoniTest {
 	}
     }
     if(! $gotwin) { 
-        return logmsg "moni state chg. ($mode) FAIL: "
+        return logmsg "$testname FAIL: "
 	    .         "Didn't get monitoring record indicating LC window change!\n";
     } 
     if(! $gotmode) {
-	return logmsg "moni state chg. ($mode) FAIL: "
+	return logmsg "$testname FAIL: "
 	    .         "Didn't get monitoring record indicating correct LC mode change!\n";
     }
     my $details = $detailed?" (LC mode & window state change records looked good)":"";
-    logmsg "moni state chg. ($mode) $details\n";
+    logmsg "$testname $details\n";
     return 1;
 }
 
@@ -1051,10 +1055,34 @@ sub doShortHitCollection {
     if(!$skipRateChk && $dataFmt == 0 && defined $pulsrate) {
 	# Look for discriminator trigger if running in pulser mode:
 	my $desiredType = $puls ? "Discriminator Trigger" : "CPU Trigger";
-	my $nhits   = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
+	my $nhits    = `/usr/local/bin/decodeeng $engFile 2>&1 | grep "$desiredType" | wc -l`;
+	if($nhits < 2) {
+	    return logmsg "$testname FAIL: not enough hits ($nhits) in $engFile!\n";
+	}
+	my $firsthit = `/usr/local/bin/decodeeng $engFile 2>&1 | grep time | head -1`;
+	my $lasthit  = `/usr/local/bin/decodeeng $engFile 2>&1 | grep time | tail -1`;
+	chomp $firsthit;
+	chomp $lasthit;
+	my $t0; my $t1;
+	# (73.24s)
+	if($firsthit !~ /\((\S+?)s\)/) {
+	    return logmsg "$testname FAIL: bad hit line in $engFile: $firsthit\n";
+	} else {
+	    $t0 = $1;
+	}
+	if($lasthit !~ /\((\S+?)s\)/) {
+            return logmsg "$testname FAIL: bad hit line in $engFile: $lasthit\n";
+        } else {
+            $t1 = $1;
+	}
+	my $dt = $t1-$t0;
+	if($dt <= 0) {
+	    return logmsg "$testname FAIL: bad delta-T in $engFile. dt=$dt, t1=$t1 "
+		.         "t0=$t0, lasthit='$lasthit', firsthit='$firsthit'\n";
+	}
 	if($nhits =~ /^\s+(\d+)$/ && $1 > 0) {
 	    my $nhits = $1;
-            my $evrate = $nhits/$dur;
+            my $evrate = $nhits/$dt;
             if($evrate < $pulsrate/3 || $evrate > $pulsrate*3) {
 		return logmsg "$testname FAIL: measured forced trigger rate ($evrate Hz) ".
 		    "doesn't match requested rate ($pulsrate Hz))\n$summary\n";
@@ -1072,6 +1100,9 @@ sub doShortHitCollection {
 	my @moni   = `decodemoni -v $monFile | grep HW`;
 	my $spesum = 0;
 	my $nspe   = 0;
+	if(@moni == 0) {
+	    return logmsg "$testname FAIL: no HW moni recs in $monFile!\n";
+	}
 	for(@moni) {
 	    my $spe = (split '\s+')[32];
 	    $nspe++;
