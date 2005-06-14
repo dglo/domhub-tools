@@ -2,7 +2,7 @@
  *
  * hacked out of decodemoni.c from:
  * John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
- *  $Id: decodeeng.c,v 1.1 2005-05-17 21:21:26 jacobsen Exp $
+ *  $Id: decodeeng.c,v 1.2 2005-06-14 23:17:12 jacobsen Exp $
  *
  * Decode engineering format data to make sure it makes sense
  *
@@ -25,12 +25,20 @@
 
 #include "bele.h"
 
+/* FIXME - take out le stuff, be is how we do it, period! */
+
 static inline unsigned short get16(int le, const unsigned char *buf) {
    return (le) ? le16(buf) : be16(buf);
 }
 
 static unsigned long long get48(int le, const unsigned char *buf) {
-   return (le) ? le48(buf) : be48(buf);
+  if(le) return le48(buf);
+  unsigned long long t=0;
+  int i; for(i=0;i<6;i++) {
+    t <<= 8;
+    t |= buf[i];
+  }
+  return t;
 }
 
 static const char *atwdFormat(int v) {
