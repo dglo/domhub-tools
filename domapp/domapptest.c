@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.22 2005-06-13 21:51:29 jacobsen Exp $
+   $Id: domapptest.c,v 1.23 2005-06-14 23:17:53 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -486,19 +486,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"OK.\n");
   }
 
-  if(hwival || cfival) {
-    fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", 
-	    hwival, cfival);
-    if((r=domsg(filep, bufsiz, 10000,
-                DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
-		"-LL", (unsigned long) hwival, (unsigned long) cfival)) != 0) {
-      fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
-      exit(-1);
-    }
-    fprintf(stderr,"OK.\n");
-    moniOn = 1;
-  }
-  
   if(defineATWD) {
     if(whichATWD != 0 && whichATWD != 1) {
       fprintf(stderr,"Error: must select ATWD 0 or 1!\n\n");
@@ -594,6 +581,19 @@ int main(int argc, char *argv[]) {
     running = 1;
   }
 
+  if(hwival || cfival) {
+    fprintf(stderr,"Setting monitoring intervals (hw=%d sec, cf=%d sec)... ", 
+	    hwival, cfival);
+    if((r=domsg(filep, bufsiz, 10000,
+                DATA_ACCESS, DATA_ACC_SET_MONI_IVAL, 
+		"-LL", (unsigned long) hwival, (unsigned long) cfival)) != 0) {
+      fprintf(stderr,"DATA_ACC_SET_MONI_IVAL failed: %d\n", r);
+      exit(-1);
+    }
+    fprintf(stderr,"OK.\n");
+    moniOn = 1;
+  }
+  
   /* Set up supernova system, if desired */
   int snfd;
   if(dosn) {
