@@ -1,7 +1,7 @@
 /* domapptest.c
    John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
    Started June, 2004
-   $Id: domapptest.c,v 1.23 2005-06-14 23:17:53 jacobsen Exp $
+   $Id: domapptest.c,v 1.24 2005-06-20 15:34:26 jacobsen Exp $
 
    Tests several functions of DOMapp directly through the 
    DOR card interface/driver, bypassing any Java or network
@@ -135,6 +135,7 @@ int reportableDelta(int dtsec, int lastdtsec);
 int doSnCrashTest(int filep, int bufsiz);
 int doResetMonitoringMessage(int filep, int bufsiz);
 void getTimes(struct timeval * tstart, int * dtsec, int *dtusec, unsigned long long * dt);
+int drainMoniMessages(int savemoni, int monifd, int filep, int bufsiz, int maxtries);
 
 #define EMPTY  0
 #define ECHO   1
@@ -608,6 +609,14 @@ int main(int argc, char *argv[]) {
       exit(-1);
     }
     snOn = 1;
+  }
+
+  /* Drain out any pending moni messages before starting long run to make
+     sure they make it out.  FIXME: do this at end of run instead (needs
+     redesign of main loop */
+  if(drainMoniMessages(savemoni, monifd, filep, bufsiz, 500)) {
+    fprintf(stderr,"Couldn't drain pending monitoring messages!\n");
+    exit(-1);
   }
 
   /* keep gettimeofday near beginRun to time run correctly */
@@ -1507,5 +1516,74 @@ int doSnCrashTest(int filep, int bufsiz) {
     return 1;
   }
 
+  return 0;
+}
+
+int drainMoniMessages(int savemoni, int monifd, int filep, int bufsiz, int maxtries) {
+  int r;
+  char mbuf[MAX_DATA_LEN];
+  int itry;
+  int terminated = 0;
+  for(itry=0; itry<maxtries; itry++) {
+    unsigned char avail;
+    if((r=domsg(filep, bufsiz, 10000,
+		DATA_ACCESS, DATA_ACC_MONI_AVAIL, "+C", &avail)) != 0) {
+      fprintf(stderr,"DATA_ACC_MONI_AVAIL failed: %d\n", r);
+      return 1;
+    }
+    if(!avail) {
+      terminated = 1; 
+      break;
+    }
+    DOMMSG * moniMsg      = newMoniMsg();
+    DOMMSG * msgReply     = newMsg();
+    int len = sendMsg(filep, moniMsg, 1000);
+    if(len < 8) {
+      fprintf(stderr,"DATA_ACC_GET_NEXT_MONI_REC: short write (%d bytes)\n", len);
+      return 1;
+    }
+    len = getMsg(filep, msgReply, bufsiz, 10000);
+    if(len < 8) {
+      fprintf(stderr,"DATA_ACC_GET_NEXT_MONI_REC: short read (%d bytes)\n", len);
+      return 1;
+    }
+    if((r=domsg(filep, bufsiz, 10000,
+                DATA_ACCESS, DATA_ACC_GET_NEXT_MONI_REC, "+X", &mbuf)) != 0) {
+      fprintf(stderr,"DATA_ACC_GET_NEXT_MONI_REC: %d\n", r);
+      return 1;
+    }
+    if(savemoni) {
+      int rmt    = msgType(msgReply);
+      int rmst   = msgSubType(msgReply);
+      int dlen   = msgDataLen(msgReply);
+      int status = msgStatus(msgReply);
+      if(rmt != DATA_ACCESS) { 
+	fprintf(stderr,"drainMoniMessages: Bad message type (%d)\n", rmt);
+	return 1;
+      }
+      if(rmst != DATA_ACC_GET_NEXT_MONI_REC) {
+        fprintf(stderr,"drainMoniMessages: Bad message subtype (%d)\n", rmst);
+        return 1;
+      }
+      if(status != 1) {
+	fprintf(stderr,"drainMoniMessages: Bad message status (%d)\n", status);
+	return 1;
+      }
+      if(dlen < 8) {
+	fprintf(stderr,"drainMoniMessages: Bad message length (%d)\n", dlen);
+	return 1;
+      }
+      int nm = write(monifd, msgReply->data, dlen);
+      if(nm != dlen) {
+	fprintf(stderr,"Short write (%d of %d bytes) to monitoring stream.\n",
+		nm, dlen); 
+	return 1;
+      }
+    }
+  }
+  if(!terminated) {
+    fprintf(stderr,"drainMoniMessages: never got empty moni buffer!!!\n");
+    return 1;
+  }
   return 0;
 }
