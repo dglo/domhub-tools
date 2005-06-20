@@ -5,7 +5,7 @@
 #
 # John Jacobsen, John Jacobsen IT Services, for LBNL/IceCube
 # Dec. 2003
-# $Id: upload_domapp.pl,v 1.5 2005-06-02 18:13:45 jacobsen Exp $
+# $Id: upload_domapp.pl,v 1.6 2005-06-20 15:33:32 jacobsen Exp $
 
 use Fcntl;
 use strict;
@@ -16,7 +16,10 @@ my $verbose = 0;
 my $quiet   = 0;
 $|++;
 
-sub drain_iceboot;
+sub killdomserv;    sub domserv_command;   sub waitForDomserv;
+sub drain_iceboot;  
+sub pause { select undef,undef,undef,0.3; };
+
 sub usage { return <<EOF;
 Usage: $0 [-f name] <card> <pair> <dom> <file>
 	            <dom> is A or B.
@@ -27,10 +30,6 @@ Usage: $0 [-f name] <card> <pair> <dom> <file>
 EOF
 ;
 	}
-sub ymodem1kcmd;
-sub pause { select undef,undef,undef,0.3; };
-sub killdomserv;
-sub domserv_command;
 
 my $flash;
 my $help;
@@ -74,16 +73,17 @@ my $szargs = "-q --ymodem -k --tcp-client localhost:$szport $file";
 print "Talking port $port, SZ port $szport.\n" unless $quiet;
 # Start domserv...
 
-my $pid = fork;
-die "Can't fork: $!\n" unless defined $pid;
+my $domservPID = fork;
+die "Can't fork: $!\n" unless defined $domservPID;
 
-if($pid == 0) {
-    my $domserv_cmd = "$domserv -dh 2>&1 > /dev/null";
+if($domservPID == 0) {
+    my $qarg = ($quiet?">/dev/null":"");
+    my $domserv_cmd = "$domserv -dh 2>&1 $qarg";
     print "EXEC($domserv_cmd)\n" unless $quiet;
     open DS, "|$domserv_cmd";
     my $domsrvinput = "open dom $card$pair$dom";
     print DS "$domsrvinput\n";
-    print "DOMSERV($domsrvinput)\n" unless $quiet;
+    print "DOMSERV($$,$domsrvinput)\n" unless $quiet;
     close DS;
     sleep 1000;
     # Domserv waits at this point
@@ -92,50 +92,72 @@ if($pid == 0) {
 
 # After this point pid is our child process (domserv).
 # connect and upload here
-select undef, undef, undef, 0.3; # Wait for domserv to start up
 
-if(domserv_command("localhost", $port, "ymodem1k", "CCC")) {
+$SIG{INT} = $SIG{KILL} = sub { killdomserv $domservPID; };
+
+waitForDomserv;
+
+my $socket = undef;
+sub opensock {
+    $socket = new IO::Socket::INET(PeerAddr   => "localhost",
+				   PeerPort   => $port,
+				   Proto      => 'tcp',
+				   Blocking   => 1
+				   );
+}
+
+opensock;
+
+syswrite $socket, "\r\rymodem1k\r";
+
+if(domserv_command(undef, "CCC")) {
     warn "FAIL: ymodem1k didn't give expected 'CCC...' pattern (wrong DOM state?)\n";
-    killdomserv $pid;
+    killdomserv $domservPID;
     exit;
 }
 
-my $cmd = "$sz $szargs 2>&1\n";
-print $cmd unless $quiet;
-sleep 1;
-my $szresult = `$cmd`;
-print "SZ command result: $szresult\n" unless $quiet;
+close($socket);
 
-if(domserv_command("localhost", $port, ".s")) {
-    warn "FAIL: domserv_command failed (.s).\n";
-    killdomserv $pid;
-    exit;
+waitForDomserv; # Sometimes domserv dies...
+
+my $cmd      = "$sz $szargs 2>&1\n";  print $cmd unless $quiet;
+my $szresult = `$cmd`;    
+if($szresult =~ /refused/i) {
+    killdomserv $domservPID;
+    warn `ps ax | grep domserv`;
+    die "FAIL: sz gave:\n$szresult\n";
+}
+
+opensock;
+
+if(domserv_command(".s")) {
+    killdomserv $domservPID;
+    die "FAIL: domserv_command failed (.s).\n";
 }
 
 if(!defined $uploadonly) {
-    if(! $nogunzip && domserv_command("localhost", $port, "gunzip")) {
-	warn "FAIL: domserv_command failed (gunzip).\n";
-	killdomserv $pid;
-	exit;
+    if(! $nogunzip && domserv_command("gunzip", "gunzip.+?>")) {
+	killdomserv $domservPID;
+	die "FAIL: domserv_command failed (gunzip).\n";
     }
     
     if(defined $flash) {
-	if(domserv_command("localhost", $port, "s\" $flash\" create")) {
-	    warn "FAIL: domserv_command failed (write flash).\n";
-	    killdomserv $pid;
-	    exit -1;
+	if(domserv_command("s\" $flash\" create","create.+?>")) {
+	    killdomserv $domservPID;
+	    die "FAIL: domserv_command failed (write flash).\n";
 	}
     } else {
-	if(domserv_command("localhost", $port, "exec")) {
-	    warn "FAIL: domserv_command failed (exec).\n";
-	    killdomserv $pid;
-	    exit;
+	if(domserv_command("exec","exec")) {
+	    killdomserv $domservPID;
+	    die "FAIL: domserv_command failed (exec).\n";
 	}
     }
 }
 
+print "\n" unless $quiet;
+
 select undef, undef, undef, 0.3;
-killdomserv $pid;
+killdomserv $domservPID;
 
 print "SUCCESS\n";
 exit;
@@ -147,62 +169,65 @@ sub printable {
 }
 
 sub domserv_command {
-    my $hostname = shift; die unless defined $hostname;
-    my $port     = shift; die unless defined $port;
-    my $cmd      = shift; die unless defined $cmd;
+    my $cmd      = shift; 
     my $expect   = shift;
-    # Wait for previous socket to close
-    select undef, undef, undef, 0.1;
-    my $socket = new IO::Socket::INET(PeerAddr   => $hostname,
-				      PeerPort   => $port,
-				      Proto      => 'tcp',
-				      Blocking   => 0
-				      );
-    
+
     if(!defined $socket) {
-	warn "FAIL: Can't set up socket to $hostname:$port :-- $!\n";
+	warn "FAIL: No socket to port $port :-- $!\n";
 	return 1;
     }
-    syswrite $socket, "\r\r$cmd\r";
-    my $sel = new IO::Select($socket);
-    my $buf;
-    my $totbuf = "";
-    my $gotexpect = 0;
-    while($sel->can_read(0.6)) {
-	my $read = sysread($socket, $buf, 1);
-	if($read) {
-	    $totbuf .= $buf;
-	    print " " if !$quiet && $buf eq "\r";
-	    print $buf if !$quiet && printable($buf);
-	    if(defined $expect) {
-		if($totbuf =~ /$expect/m) {
-		    # print "Got EXPECT($expect)!\n";
-		    $gotexpect = 1;
-		    last;
-		}
-	    }
-	} else {
-	    if(defined $expect) {
-		return 1;
-	    } else { # Don't need anything, just done
-		last;
-	    }
-	}
+    if(defined $cmd) {
+	syswrite $socket, "\r\r$cmd\r";
     }
-    close($socket);
-    if(defined $expect and ! $gotexpect) {
-	return 1;
-    } else { # Alles gute
+    if(!defined $expect) {
 	return 0;
     }
+    my $sel = new IO::Select($socket);
+    my $buf;
+    my $totbuf    = "";
+    my $gotexpect = 0;
+    my $maxtries  = 20;
+    my $itries    = 0;
+    while(1) {
+	if(!$sel->can_read(0.5)) {
+	    $itries++;
+	    if($itries >= $maxtries) {
+		print "TIMEOUT!\n";
+		last;
+	    }
+	    next;
+	}
+	$itries = 0;
+	my $read = sysread($socket, $buf, 1);
+	return 1 unless $read > 0;
+	
+	$totbuf .= $buf;
+	print " " if !$quiet && $buf eq "\r";
+	print $buf if !$quiet && printable($buf);
+	if($totbuf =~ /$expect/s) {
+	    # print "Got EXPECT($expect)!\n";
+	    $gotexpect = 1;
+	    last;
+	}
+    }
+    return 1 unless $gotexpect;
+    return 0;
 }
 
 sub killdomserv {
-    my $pid = shift;
-    return undef unless defined $pid;
-    return undef unless $pid > 0;
-    kill 9, $pid;
+    my $domservPID = shift;
+    return undef unless defined $domservPID;
+    return undef unless $domservPID > 0;
+    kill 9, $domservPID;
     system "killall domserv 2>&1 > /dev/null";
 
 }
 
+sub waitForDomserv {
+    for(1..30) {
+	my @ps = `ps ax | grep /usr/local/bin/domserv | grep -v grep | grep -v sh`;
+	return if @ps > 0;
+	select undef, undef, undef, 0.33;
+    }
+    die "Domserv died or never started!!!\n";
+}
