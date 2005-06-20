@@ -5,7 +5,7 @@
 #
 # John Jacobsen, John Jacobsen IT Services, for LBNL/IceCube
 # Dec. 2003
-# $Id: upload_domapp.pl,v 1.6 2005-06-20 15:33:32 jacobsen Exp $
+# $Id: upload_domapp.pl,v 1.7 2005-06-20 16:03:42 jacobsen Exp $
 
 use Fcntl;
 use strict;
@@ -99,14 +99,19 @@ waitForDomserv;
 
 my $socket = undef;
 sub opensock {
-    $socket = new IO::Socket::INET(PeerAddr   => "localhost",
-				   PeerPort   => $port,
-				   Proto      => 'tcp',
-				   Blocking   => 1
-				   );
+    for(1..20) {
+	$socket = new IO::Socket::INET(PeerAddr   => "localhost",
+				       PeerPort   => $port,
+				       Proto      => 'tcp',
+				       Blocking   => 1
+				       );
+        return if defined $socket;
+	select undef, undef, undef, 0.5;
+    }
+    die "FAIL: Can't open socket to port $port: $!\n";
 }
 
-opensock;
+opensock; print "Got socket connection to $port.\n" unless $quiet;
 
 syswrite $socket, "\r\rymodem1k\r";
 
