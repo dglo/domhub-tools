@@ -70,6 +70,7 @@ inline int msgStatus(DOMMSG *m) { return m->head.hd.status; }
 #define DATA_ACC_GET_COMP_MODE     27
 #define DATA_ACC_GET_SN_DATA       28
 #define DATA_ACC_RESET_MONI_BUF    29
+#define DATA_ACC_MONI_AVAIL        30
 #define DSC_READ_ALL_ADCS 10
 #define DSC_READ_ONE_ADC 11
 #define DSC_READ_ALL_DACS 12
