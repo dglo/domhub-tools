@@ -1,7 +1,11 @@
 SUBDIRS=domhub-tools domhub-testing
+RELEASE=rel-100
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
+
+rpm:
+	./dorpm $(RELEASE)
 
 clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
