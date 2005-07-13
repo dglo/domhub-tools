@@ -15,7 +15,7 @@ IceCube DOM Hub Testing Applications (MJB, ...)
 %setup -q
 
 %build
-make clean; make
+make clean; cd rel-100; make
 
 %install
 install -d ${RPM_BUILD_ROOT}/usr/local/share
