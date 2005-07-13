@@ -114,7 +114,6 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
-/usr/local/share/domhub-tools
 /usr/local/bin/se
 /usr/local/bin/tcalcycle
 /usr/local/bin/domserv
@@ -156,6 +155,26 @@ rm -rf $RPM_BUILD_ROOT
 /usr/local/share/domhub-testing/throughput.sh
 /usr/local/share/domhub-testing/wiggle-test.sh
 /usr/local/share/domhub-testing/wr-block-test.sh
+/usr/local/share/domhub-tools/cb-version.exp
+/usr/local/share/domhub-tools/common.sh
+/usr/local/share/domhub-tools/configboot.sh
+/usr/local/share/domhub-tools/dom.awk
+/usr/local/share/domhub-tools/domhub-version.sh
+/usr/local/share/domhub-tools/domstate.sh
+/usr/local/share/domhub-tools/dor.awk
+/usr/local/share/domhub-tools/echo-mode.sh
+/usr/local/share/domhub-tools/ib-versions.exp
+/usr/local/share/domhub-tools/iceboot.sh
+/usr/local/share/domhub-tools/insrel.sh
+/usr/local/share/domhub-tools/ldall.sh
+/usr/local/share/domhub-tools/softboot.sh
+/usr/local/share/domhub-tools/tcal-calc.awk
+/usr/local/share/domhub-tools/tcal-cvt.awk
+/usr/local/share/domhub-tools/tcal-kalle.sh
+/usr/local/share/domhub-tools/tcal-stf.sh
+/usr/local/share/domhub-tools/tcal.awk
+/usr/local/share/domhub-tools/tcal.sh
+/usr/local/share/domhub-tools/versions.sh
 
 %post
 ln -f ${RPM_BUILD_ROOT}/usr/local/share/domhub-tools/configboot.sh \
@@ -189,6 +208,28 @@ ln -f ${RPM_BUILD_ROOT}/usr/local/share/domhub-testing/throughput-AB.sh \
         ${RPM_BUILD_ROOT}/usr/local/share/domhub-testing/throughput-B-results.sh
 ln -f ${RPM_BUILD_ROOT}/usr/local/share/domhub-testing/run-mjb.sh \
         ${RPM_BUILD_ROOT}/usr/local/bin/run-mjb
+
+%postun
+rm -f /usr/local/bin/ldall
+rm -f /usr/local/bin/configboot
+rm -f /usr/local/bin/domstate
+rm -f /usr/local/bin/echo-mode
+rm -f /usr/local/bin/iceboot
+rm -f /usr/local/bin/insrel
+rm -f /usr/local/bin/ldall
+rm -f /usr/local/bin/tcal-kalle
+rm -f /usr/local/bin/tcal-stf
+rm -f /usr/local/bin/tcal
+rm -f /usr/local/bin/versions
+rm -f /usr/local/bin/softboot
+rm -f /usr/local/bin/domhub-version
+rm -f /usr/local/share/domhub-testing/throughput-A-results.sh
+rm -f /usr/local/share/domhub-testing/throughput-B-results.sh
+rm -f /usr/local/share/domhub-tools/pwr.sh
+rm -f /usr/local/share/domhub-tools/rel.num
+rm -f /usr/local/bin/run-mjb
+rmdir /usr/local/share/domhub-testing
+rmdir /usr/local/share/domhub-tools
 
 %changelog
 * Wed Jul 13 2005 John E. Jacobsen <jacobsen@npxdesigns.com>
