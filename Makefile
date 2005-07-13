@@ -1,4 +1,4 @@
-SUBDIRS=domhub-tools domhub-testing moat domapp
+SUBDIRS=domhub-tools domhub-testing
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
@@ -21,4 +21,3 @@ release: clean
 	@echo "created: domhub-tools-`cat rel.num`.tar.gz"
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
-	
