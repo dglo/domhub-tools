@@ -8,7 +8,7 @@ SHS=configboot.sh domstate.sh echo-mode.sh \
 	tcal-kalle.sh tcal-stf.sh tcal.sh versions.sh \
 	softboot.sh domhub-version.sh
 CSHS=common.sh
-PROGS=se tcalcycle domserv domterm decodetcal decodemoni decodeeng
+PROGS=se tcalcycle domserv domterm decodetcal
 
 all: $(PROGS)
 
