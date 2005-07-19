@@ -7,7 +7,6 @@ License: Copyright 2003 LBNL/IceCube collaboration (sorry, *NOT* GPL)
 Group: System Environment/Base
 BuildRoot: %{_tmppath}/%{name}-root
 Prefix: %{_prefix}
-Requires: dor-driver
 
 %description
 IceCube DOM Hub Testing Applications (MJB, ...)
