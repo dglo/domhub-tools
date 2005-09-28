@@ -298,9 +298,9 @@ int main(int argc, char *argv[]) {
          snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c", dom[0], dom[1], 
             dom[2]);
          if ((fds[ndoms]=open(path, O_RDWR))<0) {
-            fprintf(stderr, "echo-test: warning: open '%s': %s\n", path, 
+            fprintf(stderr, "echo-test: open '%s': %s\n", path, 
                     strerror(errno));
-            continue;
+            return 1;
          }
          doms[ndoms] = strdup(dom);
          ndoms++;

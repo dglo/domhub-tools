@@ -15,8 +15,8 @@ if (( `awk '{ print $8; }' $1 | sort -n | uniq | wc -l | awk '{ print $1; }'` \
 	exit 1
 fi
 
-if (( `awk '{ print $8; }' $1 | sort -n | uniq` != 612 )); then
-	echo "tcal: dom tx - rx clocks is not always 612"
+if (( `awk '{ print $8; }' $1 | sort -n | uniq` != 610 )); then
+	echo "tcal: dom tx - rx clocks is not always 610"
 	exit 1
 fi
 
