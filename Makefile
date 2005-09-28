@@ -1,5 +1,5 @@
 SUBDIRS=domhub-tools domhub-testing
-RELEASE=rel-100
+RELEASE=rel-$(shell /bin/bash -c 'cat rel.num' )
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
