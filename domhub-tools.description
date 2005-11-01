@@ -1,0 +1,4 @@
+These programs allow the user to manipulate
+the state of the doms attached to a domhub.
+They are used in the testing programs, and
+for debugging the doms.

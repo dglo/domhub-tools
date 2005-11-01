@@ -32,8 +32,8 @@ iceboot -q ${doms} >& /dev/null
 # all doms are now in iceboot...
 #
 pids=`for dom in ${doms}; do
-  ( printf 'send "echo-mode\r"\nexpect "echo-mode"\n' |
-      se ${dom} >& /dev/null ) & echo $!
+  ( printf 'send "stf\r"\nexpect "stf"\n' | \
+	se ${dom} >& /dev/null ) & echo $!
 done`
 
 wait-till-dead 5000 ${pids}

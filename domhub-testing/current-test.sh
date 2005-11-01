@@ -14,10 +14,18 @@ trap atexit EXIT
 dom=$1
 card=`getCard ${dom}`
 pair=`getPair ${dom}`
-for ((i=0; i<1000; i++)); do
-    cat /proc/driver/domhub/card${card}/pair${pair}/current | \
-    awk '{ print $7; }'
-done > /tmp/ct.$$.out
+
+if [[ -d /proc/driver/domhub ]]; then
+    for ((i=0; i<1000; i++)); do
+	cat /proc/driver/domhub/card${card}/pair${pair}/current | \
+	    awk '{ print $7; }'
+    done > /tmp/ct.$$.out
+else
+    for ((i=0; i<1000; i++)); do
+	cat /proc/dor/${card}/wp-status | grep "^${card}${pair}" | \
+	    awk '{ print $9; }'
+    done > /tmp/ct.$$.out
+fi
 
 #
 # calculate...

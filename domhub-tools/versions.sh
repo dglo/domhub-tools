@@ -10,13 +10,18 @@ doms=`getDomList $*`
 
 function getVersions() {
     card=`echo $1 | awk '{ print substr($0, 1, 1); }'`
-    dorv=`cat /proc/driver/domhub/card${card}/fpga | \
-	awk '$1 ~ /^FREV$/ { print substr($2, 7, 2), substr($2, 9, 2); }'`
-    dorn=`echo ${dorv} | awk '{ print $1; }'`
-    dorc=`echo ${dorv} | awk '{ print $2; }'`
-    let c=$(( 0x${dorc} ))
-    let n=$(( 0x${dorn} ))
-    dorv=`echo ${n} ${c} | awk '{ printf "%d%c", $1, $2 }'`
+    
+    if [[ -d /proc/driver/domhub ]]; then
+	dorv=`cat /proc/driver/domhub/card${card}/fpga | \
+	    awk '$1 ~ /^FREV$/ { print substr($2, 7, 2), substr($2, 9, 2); }'`
+	dorn=`echo ${dorv} | awk '{ print $1; }'`
+	dorc=`echo ${dorv} | awk '{ print $2; }'`
+	let c=$(( 0x${dorc} ))
+	let n=$(( 0x${dorc} ))
+	dorv=`echo ${n} ${c} | awk '{ printf "%d%c", $1, $2 }'`
+    else
+	dorv=`cat /proc/dor/${card}/versions | awk '{ print $2; }'`
+    fi
 
     icebootv=`printf 'send "reboot\r"\nexpect "^ Iceboot "\n' | \
 	se ${dom} | grep '^ Iceboot ' | awk '{ print $4; }' | \
@@ -28,7 +33,12 @@ function getVersions() {
     fpgav=`printf 'send "fpga-versions\r"\nexpect "^  supernova"\n' | \
 	se ${dom} | awk '$0 ~ /^build number/ { print $3; }'`
 
-    drvr=`cat /proc/driver/domhub/revision | awk '{ print $1; }'`
+    if [[ -d /proc/driver/domhub ]]; then
+	drvr=`cat /proc/driver/domhub/revision | awk '{ print $1; }'`
+    else
+	drvr=`cat /proc/dor/${card}/versions | awk '{ print $1; }'`
+    fi
+    
     echo $1 ${dorv} ${icebootv} ${pldv} ${fpgav} ${drvr} | tr -d '\r'
 }
 

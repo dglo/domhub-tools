@@ -14,8 +14,14 @@ d=`getDOM ${dom}`
 
 printf 'send "no-comm wiggle\r"\nsleep 5\n' | se ${dom} >& /dev/null
 sleep 60
-echo 'reset' > \
-	/proc/driver/domhub/card${card}/pair${pair}/dom${d}/is-communicating
+
+if [[ -d /proc/driver/domhub ]]; then
+    echo 'reset' > \
+  	/proc/driver/domhub/card${card}/pair${pair}/dom${d}/is-communicating
+else
+    echo "${pair}${d}" > /proc/dor/${card}/comm-reset
+fi
+
 if ! printf 'send "\r"\nexpect "^> "\n' | se ${dom} >& /dev/null; then
     exit 1
 fi

@@ -22,19 +22,13 @@ function atexit () {
 trap atexit EXIT
 
 #
-# get neighbors first...
-#
-awk -vtime=$3 '{ if ($2>(time-1000) && $2<(time+1000)) print $0; }' $1 > \
-    /tmp/dq.$$.out
-
-#
 # get start time... 
 #
-awk -vdom=$4 -vtime=$3 '{ if ( $3 == dom && $2 < time) print $0; }' \
-    /tmp/dq.$$.out | tail -1 > /tmp/dq.$$.prev
+prev=`awk "\\$3 ~ /^$4\\$/ { print \\$1, \\$2; }" $1 | \
+    grep -B 1 "^$2 $3\$" | head -1`
 
-starttime=`awk '{ print $2; }' /tmp/dq.$$.prev`
-prevtest=`awk '{ print $1; }' /tmp/dq.$$.prev`
+starttime=`echo $prev | awk '{ print $2; }'`
+prevtest=`echo $prev | awk '{ print $1; }'`
 
 echo "previous> ${prevtest}"
 let ttime=$(( $3 - ${starttime} ))
@@ -45,8 +39,8 @@ echo "runtime> ${ttime}"
 #
 otherdom=`echo $4 | tr '[AB]' '[BA]'`
 
-awk -vdom=${otherdom} '{ if ( $3 == dom ) print $1, $2; }' /tmp/dq.$$.out > \
-     /tmp/dq.$$.others
+awk -vdom=${otherdom} '{ if ( $3 == dom ) print $1, $2; }' $1 > \
+    /tmp/dq.$$.others
 
 awk '{ print $2; }' /tmp/dq.$$.others > /tmp/dq.$$.times
 

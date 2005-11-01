@@ -7,7 +7,7 @@
 # output: procfile_dom_id iceboot_dom_id
 # 
 source /usr/local/share/domhub-tools/common.sh
-#exec 2> /dev/null
+exec 2> /dev/null
 
 dom=$1
 if [[ $2 == "" ]]; then
@@ -22,7 +22,11 @@ fi
 card=`getCard ${dom}`
 pair=`getPair ${dom}`
 d=`getDOM ${dom}`
-procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+if [[ -d /proc/driver/domhub ]]; then
+   procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+else
+   procfile="/proc/dor/${card}/dom-stats"
+fi
 
 echo 'reset' > ${procfile}
 
@@ -40,7 +44,8 @@ fi
 #
 # start sinking...
 #
-if ! printf 'send "20000 0 ?DO sink-pkt LOOP\r"\nsleep 1\n' | \
+count=20000
+if ! printf 'send "${count} 0 ?DO sink-pkt LOOP\r"\nsleep 1\n' | \
         se ${dom} >& /dev/null; then
     exit 2
 fi
@@ -48,8 +53,9 @@ fi
 #
 # start sending -- capture elapsed time...
 #
+devfile=`getDev ${dom}`
 et=`/usr/bin/time \
-    dd if=/dev/zero of=/dev/dhc${card}w${pair}d${d} bs=${pktsiz} count=20000 2>&1 | \
+  dd if=/dev/zero of=${devfile} bs=${pktsiz} count=${count} 2>&1 | \
     sed -n '3p' | awk '{ print $3; }' | tr -d '[a-z]' | tr ':' ' ' | tr '.' ' '`
 etms=`echo ${et} | awk '{ print $1 * 60 * 1000 + $2 * 1000 + $3 * 10; }'`
 

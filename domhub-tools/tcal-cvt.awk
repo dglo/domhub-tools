@@ -1,5 +1,5 @@
 /^cal/ {
-    idx = match($0, "cal\([0-9]+\)");
+    idx = match($0, "cal([0-9]+)");
     if (idx==0) {
 	print "tcal-cvt.awk: no cal match!";
 	exit(1);
@@ -8,7 +8,7 @@
 	cal = substr($0, idx + 4, RLENGTH - 5);
     }
 
-    idx = match($0, "dor_tx\(0x[0-9a-f]+\)");
+    idx = match($0, "dor_tx(0x[0-9a-f]+)");
     if (idx==0) {
 	print "tcal-cvt.awk: no dor_tx match";
 	exit(1);
@@ -21,7 +21,7 @@
 	dor_tx = tx;
     }
 
-    idx = match($0, "dor_rx\(0x[0-9a-f]+\)");
+    idx = match($0, "dor_rx(0x[0-9a-f]+)");
     if (idx==0) {
 	print "tcal-cvt.awk: no dor_rx match";
 	exit(1);
@@ -34,7 +34,7 @@
 	dor_rx = rx;
     }
 
-    idx = match($0, "dom_tx\(0x[0-9a-f]+\)");
+    idx = match($0, "dom_tx(0x[0-9a-f]+)");
     if (idx==0) {
 	print "tcal-cvt.awk: no dom_tx match";
 	exit(1);
@@ -47,7 +47,7 @@
 	dom_tx = tx;
     }
 
-    idx = match($0, "dom_rx\(0x[0-9a-f]+\)");
+    idx = match($0, "dom_rx(0x[0-9a-f]+)");
     if (idx==0) {
 	print "tcal-cvt.awk: no dom_rx match";
 	exit(1);
@@ -62,7 +62,7 @@
 }
 
 /^dor_wf/ {
-    idx = match($0, "dor_wf\([0-9 ,]+\)");
+    idx = match($0, "dor_wf([0-9 ,]+)");
     if (idx==0) {
 	print("tcal-cvt.awk: no dor_wf match!");
 	exit(1);
@@ -78,7 +78,7 @@
 }
 
 /^dom_wf/ {
-    idx = match($0, "dom_wf\([0-9 ,]+\)");
+    idx = match($0, "dom_wf([0-9 ,]+)");
     if (idx==0) {
         printf "tcal-cvt.awk: no dom_wf match!\n";
 	printf "$0: '%s'\n", $0;

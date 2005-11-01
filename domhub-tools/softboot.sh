@@ -35,22 +35,34 @@ if (( ${force} == 0 )); then
        awk '{ if (NF==2) print $1; }'`
 fi
 
-for dom in ${doms}; do
-    #
-    # send reset string...
-    #
-    card=`echo ${dom} | awk '{ print substr($0, 1, 1); }'`
-    wp=`echo ${dom} | awk '{ print substr($0, 2, 1); }'`
-    d=`echo ${dom} | awk '{ print substr($0, 3, 1); }'`
-
-    procfile="/proc/driver/domhub/card${card}/pair${wp}/dom${d}"
-    if [[ ! -d ${procfile} ]]; then
-        shift
-        continue
-    fi
-
-    echo "reset" > /proc/driver/domhub/card${card}/pair${wp}/dom${d}/softboot &
-done
+if [[ -d /proc/driver/domhub ]]; then
+    for dom in ${doms}; do
+        #
+        # send reset string...
+        #
+	card=`echo ${dom} | awk '{ print substr($0, 1, 1); }'`
+	wp=`echo ${dom} | awk '{ print substr($0, 2, 1); }'`
+	d=`echo ${dom} | awk '{ print substr($0, 3, 1); }'`
+	
+	procfile="/proc/driver/domhub/card${card}/pair${wp}/dom${d}"
+	if [[ ! -d ${procfile} ]]; then
+	    shift
+	    continue
+	fi
+	
+	echo "reset" > \
+	    /proc/driver/domhub/card${card}/pair${wp}/dom${d}/softboot &
+    done
+else
+    # sort by card...
+    cards=`echo ${doms} | tr ' ' '\n' | sed 's/[0-7][AB]$//1' | sort | uniq`
+    
+    for card in ${cards}; do
+	idoms=`echo ${doms} | tr ' ' '\n' | grep "^${card}" | sed 's/^.//1' | \
+	    tr '\n' ' ' | sed 's/ $//1'`
+	echo "${idoms}" > /proc/dor/${card}/softboot &
+    done
+fi
 
 wait
 
@@ -58,5 +70,3 @@ if (( ${quiet} == 0 )); then
     domstate ${odoms} | \
         awk '{ if (NF==2) print $1 " in " $2; else print $0; }'
 fi
-
-

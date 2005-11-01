@@ -1,0 +1,11 @@
+Release 200
+
+* use crossover rather than centroid in tcals
+* more baseline info in tcals
+* mjb scheduling rewritten in C
+* ldfb script to load flasherboard code
+* slightly faster scripts
+* domterm no longer echos on command prompt input
+* se takes backslashes in expect string
+* support alj dor driver interface
+

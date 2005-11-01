@@ -6,7 +6,8 @@
 # output: nbytes
 # 
 source /usr/local/share/domhub-tools/common.sh
-#exec 2> /dev/null
+exec 2> /dev/null
+
 cmdpid=0
 function atexit () { 
     rm -f /tmp/qt.$$.*;
@@ -27,4 +28,3 @@ wait ${cmdpid}
 cmdpid=0
 
 echo ${dom} `wc -c /tmp/qt.$$.out | awk '{ print $1; }'`
-

@@ -4,7 +4,7 @@
 # ldall.sh, load all the doms with software after
 # configboot and the cpld have been loaded...
 # 
-# works on card 1 only now...
+# FIXME: add -v options...
 #
 release=/home/dom/prod-REV5/release.hex
 #release=/home/arthur/release.hex
@@ -24,10 +24,16 @@ if [[ ! -f ${release} ]]; then
     exit 1
 fi
 
-( off all && on all ) >& /dev/null
+( pwr off && pwr on ) >& /dev/null
 
-cdoms=`find /proc/driver/domhub/card* -name is-communicating -exec cat {} \; | \
-   grep -v NOT | awk '{ print $2 $4 $6;}' | tr '\n' ' '`
+if [[ -d /proc/driver/domhub ]]; then
+    cdoms=`find /proc/driver/domhub/card* -name is-communicating \
+	-exec cat {} \; | \
+	grep -v NOT | awk '{ print $2 $4 $6;}' | tr '\n' ' '`
+else
+    cdoms=`cat /proc/dor/*/dom-status | \
+	awk '$2 ~ /^comm.*ing$/ { print $1; }' | tr '\n' ' ' | sed 's/ $//1'`
+fi
 echo "communicating doms: ${cdoms}"
 
 function atexit() {
