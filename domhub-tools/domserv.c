@@ -264,6 +264,10 @@ static int forkDOM(DOMList *dl, const char *prog) {
    return 0;
 }
 
+static int newapi(void) {
+   return access("/proc/dor", F_OK)==0;
+}
+
 static int startDOR(DOMList *dl) {
    /* attempt to open dor...
     */
@@ -277,7 +281,13 @@ static int startDOR(DOMList *dl) {
    if (!dhmode) 
       printf("dom(%d) card wire ab: %d %d %d\n", dom, card, wire, ab);
    
-   sprintf(name, "/dev/dhc%dw%dd%c", card, wire, (ab==0) ? 'A' : 'B');
+   if (newapi()) {
+      sprintf(name, "/dev/dor/%d%d%c", card, wire, (ab==0) ? 'A' : 'B');
+   }
+   else {
+      sprintf(name, "/dev/dhc%dw%dd%c", card, wire, (ab==0) ? 'A' : 'B');
+   }
+
    if ((fd=open(name, O_RDWR))<0) {
       perror("open");
       return 1;
@@ -615,7 +625,7 @@ int main(int argc, char *argv[]) {
       /* check for stdin... */
       if (chkStdin && (fds[0].revents&POLLIN)) {
 	 char line[128];
-	 int idx = -1, en = -1, nr;
+	 int idx = -1, en = 0, nr;
 
 	 /* deal with input... */
 	 memset(line, 0, sizeof(line));
@@ -642,7 +652,7 @@ int main(int argc, char *argv[]) {
 	    }
 	 }
 	
-	 if (idx!=-1 && en!=-1) {
+	 if (idx!=-1) {
 	    /* found one! */
 	    dhe[idx] = en;
 

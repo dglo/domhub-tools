@@ -9,13 +9,13 @@ if (( "$v" > 4 )); then
 	exit 1
 fi 
 
-if (( `awk '{ print $8; }' $1 | sort -n | uniq | wc -l | awk '{ print $1; }'` \
+if (( `awk '{ print $16; }' $1 | sort -n | uniq | wc -l | awk '{ print $1; }'` \
       != 1 )); then
 	echo "tcal: dom tx - rx clocks is not always the same"
 	exit 1
 fi
 
-if (( `awk '{ print $8; }' $1 | sort -n | uniq` != 612 )); then
+if (( `awk '{ print $16; }' $1 | sort -n | uniq` != 612 )); then
 	echo "tcal: dom tx - rx clocks is not always 612"
 	exit 1
 fi

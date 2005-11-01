@@ -12,7 +12,12 @@ dom=$1
 card=`getCard ${dom}`
 pair=`getPair ${dom}`
 d=`getDOM ${dom}`
-procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+
+if [[ -d /proc/driver/domhub ]]; then
+    procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+else
+    procfile="/proc/dor/${card}/dom-stats"
+fi
 
 echo 'reset' > ${procfile}
 

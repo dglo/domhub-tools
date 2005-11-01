@@ -106,8 +106,6 @@ static int docmd(int rfd, int wfd, const char *nm) {
             /* the dom is talking -- push it along... */
             int nr = read(rfd, buf, sizeof(buf));
 
-            write(1, buf, nr);
-
             if (nr<=0) {
                /* dom closed! */
                close(rfd);
@@ -153,6 +151,11 @@ static int docmd(int rfd, int wfd, const char *nm) {
    }
 
    return ret;
+}
+
+/* use the dor api? */
+static int newapi(void) {
+   return access("/proc/dor", F_OK)==0;
 }
 
 int main(int argc, char *argv[]) {
@@ -234,17 +237,24 @@ int main(int argc, char *argv[]) {
    }
    else {
       char path[128];
-      int bfd = open("/proc/driver/domhub/blocking", O_WRONLY);
-      if (bfd<0) {
-         perror("open blocking proc file");
-         return 1;
-      }
-      write(bfd, "1\n", 2);
-      close(bfd);
 
-      snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c",
-               argv[ai][0], argv[ai][1], toupper(argv[ai][2]));
-      
+      if (newapi()) {
+         snprintf(path, sizeof(path), "/dev/dor/%c%c%c", 
+                  argv[ai][0], argv[ai][1], toupper(argv[ai][2]));
+      }
+      else {
+         int bfd = open("/proc/driver/domhub/blocking", O_WRONLY);
+         if (bfd<0) {
+            perror("open blocking proc file");
+            return 1;
+         }
+         write(bfd, "1\n", 2);
+         close(bfd);
+
+         snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c",
+                  argv[ai][0], argv[ai][1], toupper(argv[ai][2]));
+      }
+ 
       if ((rfd=wfd=open(path, O_RDWR))<0) {
          fprintf(stderr, "domterm: open %s: %s\n", path, strerror(errno));
          return 1;

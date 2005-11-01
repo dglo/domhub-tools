@@ -69,8 +69,10 @@ if (( $rte < 5000 )); then passed="true"; else passed="false"; fi
 #
 # get dor/dom waveforms...
 #
-dorwf=`awk -f dor.awk /tmp/$$.tcal | head -4800 | tr '\n' ' '`
-domwf=`awk -f dom.awk /tmp/$$.tcal | head -4800 | tr '\n' ' '`
+dorwf=`awk '$1 ~ /^dor_[0-9][0-9]$/ { print $2; }' /tmp/$$.tcal | \
+    head -4800 | tr '\n' ' '`
+domwf=`awk '$1 ~ /^dom_[0-9][0-9]$/ { print $2; }' /tmp/$$.tcal | \
+    head -4800 | tr '\n' ' '`
 
 dortxhi=`awk '/^dor_tx_time / { print $2 " 2 32 ^ / p"; }' /tmp/$$.tcal | \
     dc | tr '\n' ' '`

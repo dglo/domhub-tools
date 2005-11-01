@@ -50,6 +50,7 @@ send '"r"'
 expect '"^> "'
 EOF
 
+# FIXME: make sure there were no errors...
 if ! se $2 < /tmp/insrel.$$.exp; then
     echo "insrel.sh: unable to install image"
     exit 1

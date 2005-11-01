@@ -9,16 +9,7 @@ exec 2> /dev/null
 #
 # cleanup...
 #
-watchdogpid=0
 function atexit () {
-    if [[ -f /tmp/ib.$$.pids ]]; then
-        for pids in `cat /tmp/ib.$$.pids`; do
-            kill ${pids}
-        done
-    fi
-    if (( ${watchdogpid} != 0 )); then
-        /bin/kill ${watchdogpid}
-    fi
     rm -f /tmp/ib.$$.* 
 }
 trap atexit EXIT
@@ -52,37 +43,20 @@ domstate ${doms} | grep -v ' iceboot$' | \
 #
 cbdoms=`grep ' configboot$' /tmp/ib.$$.state | awk '{ print $1; }' | \
    tr '\n' ' '`
-for dom in ${cbdoms}; do 
-    ( printf 'send "r"\nexpect "^ "\n' | se ${dom} >& /dev/null ) &
-    echo $!
-done > /tmp/ib.$$.pids
-
-#
-# deal with stfserv doms...
-#
-sdoms=`grep ' stfserv$' /tmp/ib.$$.state | awk '{ print $1; }' | tr '\n' ' '`
-for dom in ${sdoms}; do
-    ( printf 'send "REBOOT\r"\nexpect "^> "\n' | se ${dom} >& /dev/null ) &
-    echo $!
-done >> /tmp/ib.$$.pids
+cbpids=`for dom in ${cbdoms}; do 
+    ( printf 'send "r"\nexpect "^ "\n' | se ${dom} >& /dev/null ) & echo $!
+done`
 
 #
 # and now the rest...
 #
-rdoms=`egrep -v ' ((stfserv)|(configboot))$' /tmp/ib.$$.state | \
+rdoms=`egrep -v ' configboot$' /tmp/ib.$$.state | \
     awk '{ print $1; }' | tr '\n' ' '`
-if (( ${#rdoms} > 0 )); then
+rpids=`if (( ${#rdoms} > 0 )); then
     softboot -q -f ${rdoms} >& /dev/null & echo $!
-fi >> /tmp/ib.$$.pids
+fi`
 
-pids=`cat /tmp/ib.$$.pids | tr '\n' ' ' | sed 's/ $//1'`
-( sleep 10; massacre ${pids} >& /dev/null ) & watchdogpid=$!
-for pid in ${pids}; do
-    wait ${pid}
-done
-rm -f /tmp/ib.$$.pids
-/bin/kill -9 ${watchdogpid}
-watchdogpid=0
+wait-till-dead 10000 ${cbpids} ${rpids} 
 
 # for compatibility...
 if (( ${quiet} == 0 )); then
@@ -90,5 +64,5 @@ if (( ${quiet} == 0 )); then
         awk '{ if (NF==2) print $1 " in " $2; else print $0; }'
 fi
 
-wait
-
+atexit
+trap "" EXIT

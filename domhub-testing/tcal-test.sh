@@ -12,9 +12,9 @@ source /usr/local/share/domhub-tools/common.sh
 exec 2> /dev/null
 
 dom=$1
-
+tmpf=`mktemp /tmp/tct-XXXXXX`
 function atexit() {
-    rm -f /tmp/tct.$$.*
+    rm -f ${tmpf}
 }
 trap atexit EXIT
 
@@ -27,14 +27,16 @@ if (( $# != 1 )); then
    exit 1
 fi
 
-if ! tcalcycle -n 1000 ${dom} > /tmp/tct.$$.out; then
+if ! tcalcycle -n 1000 ${dom} > ${tmpf}; then
     echo "`basename $0`: unable to run tcalcycle..."
     exit 1
 fi 
 
-clks=`egrep '^dom_[rt]x_time' /tmp/tct.$$.out | sed -n '1,2p' | \
+clks=`egrep '^dom_[rt]x_time' ${tmpf} | sed -n '1,2p' | \
     awk '{ print $2; } END { print " - p q"}' | dc`
 
-cat /tmp/tct.$$.out | tcal-kalle -m | \
+tcal-kalle ${tmpf} | \
     awk -vdom=${dom} -vclks=${clks} '{ print dom " " $0 " " clks; }'
 
+rm -f ${tmpf}
+trap "" EXIT

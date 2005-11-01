@@ -7,11 +7,10 @@
 # great name (mjb) is due to john jacobsen...
 #
 source /usr/local/share/domhub-tools/common.sh
-exec 2> /dev/null
+#exec 2> /dev/null
 
 # we need job control on...
-set -m
-RANDOM=0
+#set -m
 
 #
 # cleanup...
@@ -24,7 +23,8 @@ function atexit() {
         longtermpid=0
     fi
 
-    for pidf in `find /tmp -name 'mjb.$$.*.pid' -print | tr '\n' ' ' `; do
+    for pidf in `find /tmp -name 'mjb.$$.*.pid' -maxdepth 1 -print | \
+	tr '\n' ' ' `; do
         pid=`cat ${pidf}`
 	echo "killing ${pid}..."
         massacre ${pid}
@@ -132,102 +132,4 @@ if (( $nothroughput == 0 )); then
     fi
 fi
 
-#
-# start watchdog...
-#
-( sleep ${seconds}; ) >& /dev/null & longtermpid=$!
-
-#
-# process data file which has just finished...
-#
-function process () {
-    dom=$1
-    local pid=`cat /tmp/mjb.$$.${dom}.pid`
-    local testnm=`cat /tmp/mjb.$$.${dom}.test`
-    wait ${pid}
-    local ts=$?
-    local line="${testnm} `date '+%s'`"
-
-    if (( ${ts} == 100 )); then
-        # duplicate test ignore...
-        echo "hi" > /dev/null
-    elif (( ${ts} == 101 )); then
-        # timeout
-        echo "${line} ${dom} ERROR: TIMEOUT"
-    elif (( ${ts} == 102 )); then
-        # test not found
-        echo "${line} ${dom} ERROR: TEST NOT FOUND"
-    elif (( ${ts} == 103 )); then
-        # usage error
-        echo "${line} ${dom} ERROR: USAGE"
-    elif (( ${ts} > 0 )); then
-        echo "${line} ${dom} ERROR: failed (${ts}):" \
-`cat /tmp/mjb.$$.${dom}.out`
-    else
-        echo ${line} `cat /tmp/mjb.$$.${dom}.out`
-    fi
-}
-
-#
-# pick a random test -- tests.txt has the list to pick from...
-#
-function getTestName () {
-    ntests=`wc -l tests.txt | awk '{print $1; }'`
-    let testnum=$(( ( RANDOM % ${ntests} ) + 1 ))
-    sed -n "${testnum}p" tests.txt | awk '{ print $1; }' | tr -d '\n'
-}
-
-#
-# callback when a test is finished...
-#
-# here we do all the work for short term tests...
-#
-# tabulate results, reschedule...
-#
-function schedule () {
-    local doms=$*
-
-    for dom in ${doms}; do
-	if [[ -f /tmp/mjb.$$.${dom}.done ]]; then
-  	    rm -f /tmp/mjb.$$.${dom}.done
-
-	    if [[ -f /tmp/mjb.$$.${dom}.pid ]]; then
-                process ${dom}
-            fi
-            # clean up...
-            rm -f /tmp/mjb.$$.${dom}.*
-
-            # schedule next test...
-	    testnm=`getTestName`
-
-            # FIXME: two doms on the pair...
-	    echo ${testnm} > /tmp/mjb.$$.${dom}.test
-            ./run-test.sh ${testnm} ${dom} /tmp/mjb.$$.${dom}.done > \
-                /tmp/mjb.$$.${dom}.out &
-            echo $! > /tmp/mjb.$$.${dom}.pid
-        fi
-     done
-}
-
-#
-# start tests...
-#
-trap "schedule ${doms}" CHLD
-for dom in ${doms}; do touch /tmp/mjb.$$.${dom}.done; done
-schedule ${doms}
-
-#
-# wait for long term tests to finish...
-#
-wait ${longtermpid}
-longtermpid=0
-trap - CHLD
-
-for dom in ${doms}; do 
-    if [[ -f /tmp/mjb.$$.${dom}.pid ]]; then
-        wait `cat /tmp/mjb.$$.${dom}.pid`
-        process ${dom}
-        rm -f /tmp/mjb.$$.${dom}.*
-    fi
-done
-
+exec ./mjb-sched ${seconds} ${doms}

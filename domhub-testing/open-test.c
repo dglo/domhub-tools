@@ -2,6 +2,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <sys/time.h>
 #include <fcntl.h>
@@ -28,6 +29,10 @@ static double timeOpen(const char *path) {
    return diffsec(&start, &done);
 }
 
+static inline int newapi(void) {
+   return access("/proc/dor", F_OK)==0;
+}
+
 int main(int argc, char *argv[]) {
    char path[128];
 
@@ -40,8 +45,14 @@ int main(int argc, char *argv[]) {
       const int cnt = 100;
       double sum = 0;
 
-      snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c", argv[1][0],
- 	argv[1][1], argv[1][2]);
+      if (newapi()) {
+         snprintf(path, sizeof(path), "/dev/dor/%c%c%c", argv[1][0],
+                  argv[1][1], toupper(argv[1][2]));
+      }
+      else {
+         snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c", argv[1][0],
+ 	          argv[1][1], argv[1][2]);
+      }
 
       ms = (int) (timeOpen(path)*1000);
 

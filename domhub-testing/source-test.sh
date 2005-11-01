@@ -7,7 +7,7 @@
 # output: procfile_dom_id iceboot_dom_id
 # 
 source /usr/local/share/domhub-tools/common.sh
-#exec 2> /dev/null
+exec 2> /dev/null
 
 dom=$1
 
@@ -17,7 +17,13 @@ dom=$1
 card=`getCard ${dom}`
 pair=`getPair ${dom}`
 d=`getDOM ${dom}`
-procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+
+if [[ -d /proc/driver/domhub ]]; then
+    procfile="/proc/driver/domhub/card${card}/pair${pair}/dom${d}/comstat"
+else
+    procfile="/proc/dor/${card}/dom-stats"
+fi
+
 
 echo 'reset' > ${procfile}
 
@@ -44,8 +50,9 @@ fi
 # sink data...
 #
 #res=`./sink $dom`
+dev=`getDev ${dom}`
 et=`/usr/bin/time \
-    dd of=/dev/null if=/dev/dhc${card}w${pair}d${d} bs=4096 count=2250 2>&1 | \
+    dd of=/dev/null if=${dev} bs=4096 count=2250 2>&1 | \
     sed -n '3p' | awk '{ print $3; }' | tr -d '[a-z]' | tr ':' ' ' | tr '.' ' '`
 etms=`echo ${et} | awk '{ print $1 * 60 * 1000 + $2 * 1000 + $3 * 10; }'`
 
@@ -64,9 +71,13 @@ let v=$(( 2250 * 596 ))
 #
 # dom [# messages] [# bytes] [elapsed time]
 #
-retx=`cat ${procfile} | tr ' ' '\n' | tr '=' ' ' | awk '/^RESENT / { print $2; }
-'`
-err=`cat ${procfile} | tr ' ' '\n' | tr '=' ' ' | awk '/^BADPKT / { print $2; }'
-`
+if [[ -d /proc/driver/domhub ]]; then
+    retx=`cat ${procfile} | tr ' ' '\n' | tr '=' ' ' | awk '/^RESENT / { print $2; }'`
+    err=`cat ${procfile} | tr ' ' '\n' | tr '=' ' ' | awk '/^BADPKT / { print $2; }'`
+else
+    retx=`cat ${procfile} | grep "^${dom} " | awk '{ print $15; }'`
+    err=0
+fi
+
 echo ${dom} 2250 ${v} ${etms} ${retx} ${err}
 

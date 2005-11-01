@@ -15,6 +15,7 @@
 #include <pty.h>
 #include <regex.h>
 
+/* get the expect string... */
 static int getString(const char *line, char *s, int szs) {
    int i=0;
    
@@ -28,7 +29,23 @@ static int getString(const char *line, char *s, int szs) {
 
    /* everything except \" */
    while ( *line && i<szs-1 && *line != '"' ) {
-      if (*line=='\\' && *(line+1)=='"') { s[i] = '"'; line++; }
+      if (*line=='\\') {
+         if (*(line+1)=='"') { 
+            s[i] = '"'; 
+            line++; 
+         }
+         else if (*(line+1)=='r') {
+            s[i] = '\r';
+            line++;
+         }
+         else if (*(line+1)=='n') {
+            s[i] = '\n';
+            line++;
+         }
+         else {
+            s[i] = *line;
+         }
+      }
       else s[i] = *line;
       line++;
       i++;
@@ -204,11 +221,12 @@ int main(int argc, char *argv[]) {
       }
       else if (strncmp(line, "expect", sizeof("expect")-1)==0) {
          char s[1024];
-         getString(line + sizeof("expect"), s, sizeof(s));
          regex_t preg;
          char rd[4096];
          int ofs = 0;
          int err;
+         
+         getString(line + sizeof("expect"), s, sizeof(s));
 
          if ((err=regcomp(&preg, s, REG_EXTENDED|REG_NEWLINE))!=0) {
             char errbuf[1024];

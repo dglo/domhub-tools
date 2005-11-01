@@ -10,7 +10,7 @@
 # take to reconnect...
 #
 source /usr/local/share/domhub-tools/common.sh
-#exec 2> /dev/null
+exec 2> /dev/null
 
 dom=$1
 
@@ -47,4 +47,3 @@ printf 'send "hi there"\nexpect "hi there"\n' | se ${dom} >& /dev/null
 endtm=`date '+%s'`
 let diff=$(( ${endtm} - ${starttm} ))
 echo ${dom} ${diff}
-

@@ -2,6 +2,7 @@
  *
  * hacked out of decodemoni.c from:
  * John Jacobsen, jacobsen@npxdesigns.com, for LBNL/IceCube
+ *  $Id: decodetcal.c,v 1.1.1.1 2005-11-01 23:36:06 arthur Exp $
  *
  * Decode engineering format data to make sure it makes sense
  */

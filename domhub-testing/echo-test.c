@@ -17,6 +17,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#define VERBOSE
+#undef VERBOSE
+
 #define MAXDOMS 64
 
 struct DomBuf {
@@ -70,6 +73,21 @@ static int unreg(int dom, const char *buf, int nbuf, int *wm, int *rm) {
       if (db->dom==dom) {
          int ret = 
             (db->ndata==nbuf && memcmp(buf, db->data, nbuf)==0) ? 0 : 1;
+
+#if defined(VERBOSE)
+         {
+            int i;
+
+            printf("sent rcvd lengths=%d %d\n", db->ndata, nbuf);
+            printf("send rcvd data:\n");
+            for (i=0; i<db->ndata; i++) {
+               printf("%d %02x %02x\n", i, 
+                      (unsigned char) db->data[i], 
+                      (unsigned char) ((i<nbuf) ? buf[i] : 0));
+            }
+         }
+#endif
+
          free((char *) db->data);
          if (pdb!=NULL) pdb->next = db->next;
          if (db->next==NULL) dbLast = pdb;
@@ -100,7 +118,8 @@ static int readThrottle(int rate, unsigned long long bytes, double sec) {
    return bytes/sec > rate; 
 }
 
-static int test(int *dfds, const char **doms, int ndoms, int nmsgs, int rdt) {
+static int test(int *dfds, const char **doms, int ndoms, int nmsgs, int rdt,
+                int randomPkts, int pktSize) {
    struct pollfd fds[MAXDOMS];
    int dord = 1;
    int rmsgs[MAXDOMS];
@@ -197,7 +216,7 @@ static int test(int *dfds, const char **doms, int ndoms, int nmsgs, int rdt) {
                   
                   if ( (fds[i].revents&POLLOUT) && wmsgs[j]>0) {
                      /* do write... */
-                     const int nw = (random()%4091)+1;
+                     const int nw = randomPkts ? (random()%4091)+1 : pktSize;
                      int ret;
                      
                      fill(buf, nw);
@@ -271,6 +290,11 @@ static void usage(void) {
    fprintf(stderr, "usage: echo-test [-t rate|-n nmsgs] doms...\n");
 }
 
+/* use the dor api? */
+static int newapi(void) {
+   return access("/proc/dor", F_OK)==0;
+}
+
 int main(int argc, char *argv[]) {
    int ai;
    int ndoms = 0;
@@ -278,6 +302,8 @@ int main(int argc, char *argv[]) {
    int nmsgs=1000;
    const char *doms[MAXDOMS];
    int rdthrottle = -1; /* read throttle data rate in bytes/sec */
+   int randomPkts = 1;
+   int pktSize = 4092;
 
    for (ai=1; ai<argc; ai++) {
       if (strcmp(argv[ai], "-t")==0 && ai<argc-1) {
@@ -288,6 +314,11 @@ int main(int argc, char *argv[]) {
          nmsgs = atoi(argv[ai+1]);
          ai++;
       }
+      else if (strcmp(argv[ai], "-p")==0 && ai<argc-1) {
+         pktSize = atoi(argv[ai+1]);
+         randomPkts = 0;
+         ai++;
+      }
       else if (strlen(argv[ai])==3) {
          /* open dom... */
          char path[128];
@@ -295,12 +326,20 @@ int main(int argc, char *argv[]) {
 
          strcpy(dom, argv[ai]);  
          dom[2] = toupper(dom[2]);
-         snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c", dom[0], dom[1], 
-            dom[2]);
+
+         if (newapi()) {
+            snprintf(path, sizeof(path), 
+                     "/dev/dor/%c%c%c", dom[0], dom[1], dom[2]);
+         }
+         else {
+            snprintf(path, sizeof(path), "/dev/dhc%cw%cd%c", dom[0], dom[1], 
+                     dom[2]);
+         }
+             
          if ((fds[ndoms]=open(path, O_RDWR))<0) {
-            fprintf(stderr, "echo-test: warning: open '%s': %s\n", path, 
+            fprintf(stderr, "echo-test: open '%s': %s\n", path, 
                     strerror(errno));
-            continue;
+            return 1;
          }
          doms[ndoms] = strdup(dom);
          ndoms++;
@@ -316,7 +355,7 @@ int main(int argc, char *argv[]) {
       return 1;
    }
    
-   if (test(fds, doms, ndoms, nmsgs, rdthrottle)) {
+   if (test(fds, doms, ndoms, nmsgs, rdthrottle, randomPkts, pktSize)) {
       fprintf(stderr, "echo-test: unable to complete test\n");
       return 1;
    }
