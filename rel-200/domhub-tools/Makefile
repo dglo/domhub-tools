@@ -10,6 +10,9 @@ SHS=configboot.sh domstate.sh echo-mode.sh \
 CSHS=common.sh
 PROGS=se tcalcycle domserv domterm decodetcal rtcalc chkgps gps2a \
 	xmln xovr
+ROOT=
+BINPATH=$(ROOT)/usr/local/bin
+SHAREPATH=$(ROOT)/usr/local/share/domhub-tools
 
 all: $(PROGS)
 
@@ -41,25 +44,24 @@ gps2a: gps2a.o
 	gcc -g -o gps2a gps2a.o
 
 install: $(PROGS)
-	install -D $(PROGS) /usr/local/bin
-	@mkdir -p /usr/local/share/domhub-tools
-	install -D $(AWKS) $(CSHS) $(SHS) $(EXPS) /usr/local/share/domhub-tools
+	install -D $(PROGS) $(BINPATH)
+	@mkdir -p $(SHAREPATH)
+	install -D $(AWKS) $(CSHS) $(SHS) $(EXPS) $(SHAREPATH)
 	for f in $(SHS); do \
 		lnnm=`echo $$f | sed 's/.sh$$//1'`; \
-		ln -f /usr/local/share/domhub-tools/$${f} \
-			/usr/local/bin/$${lnnm}; \
+		ln -f $(SHAREPATH)/$${f} $(BINPATH)/$${lnnm}; \
 	done
 
 uninstall:
-	cd /usr/local/bin; rm $(PROGS)
+	cd $(BINPATH); rm $(PROGS)
 
 clean:
 	rm -f $(PROGS) *.o
 
 spec-files:
-	@echo /usr/local/share/domhub-tools
-	@for f in $(PROGS); do echo /usr/local/bin/$${f}; done
+	@echo $(SHAREPATH)
+	@for f in $(PROGS); do echo $(BINPATH)/$${f}; done
 	@for f in $(SHS); do \
 		lnnm=`echo $$f | sed 's/.sh$$//1'`; \
-		echo /usr/local/bin/$${lnnm}; \
+		echo $(BINPATH)/$${lnnm}; \
 	done
