@@ -8,6 +8,8 @@ RPM=$(RPMDIR)/RPMS/i386/$(SRT)-1.i386.rpm
 SPEC=$(RPMDIR)/SPECS/domhub-tools.spec
 STB=$(SRT).tar.gz
 FILES=domhub-tools.description Makefile rel.num ChangeLog
+ROOT=
+BINPATH=$(ROOT)/usr/local/bin
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
@@ -16,8 +18,11 @@ clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
 
 install:
-	@for dir in $(SUBDIRS); do (cd $$dir && make install ); done
-	install -D rel.num /usr/local/share/domhub-tools/rel.num
+	@if [[ ! -d $(BINPATH) ]]; then mkdir $(BINPATH); fi
+	@for dir in $(SUBDIRS); do \
+		(cd $$dir && make ROOT=$(ROOT) install ); \
+	done
+	install -D rel.num $(ROOT)/usr/local/share/domhub-tools/rel.num
 
 $(STB): clean
 	@if [[ ! -f rel.num ]]; then echo 100 > rel.num; fi
@@ -51,7 +56,8 @@ spec-header:
 	@echo "Copyright: GPL" >> $(SPEC)
 	@echo "Group: Applications/System" >> $(SPEC)
 	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
-	@echo "%define __check_files %{nil}" >> $(SPEC)
+	@echo "BuildRoot: /tmp/domhub-tools" >> $(SPEC)
+
 spec-description:
 	@echo " " >> $(SPEC)
 	@echo "%description" >> $(SPEC)
@@ -70,7 +76,7 @@ spec-build:
 spec-install:
 	@echo " " >> $(SPEC)
 	@echo "%install" >> $(SPEC)
-	@echo "make install" >> $(SPEC)
+	@echo "make \"ROOT=\$$RPM_BUILD_ROOT\" install" >> $(SPEC)
 
 spec-clean:
 	@echo " " >> $(SPEC)

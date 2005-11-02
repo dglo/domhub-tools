@@ -30,18 +30,22 @@ RESULTS=domid-results.sh quiet-results.sh softboot-results.sh \
 	tcal-results.sh
 QUERIES=details-qry.sh error-qry.sh even-schedule-qry.sh results-qry.sh
 
+ROOT=
+BINPATH=$(ROOT)/usr/local/bin
+SHAREPATH=$(ROOT)/usr/local/share/domhub-testing
+
 install: all
-	@mkdir -p /usr/local/share/domhub-testing
+	@mkdir -p $(SHAREPATH)
 	install -D $(BIN) $(TESTS) $(RESULTS) $(QUERIES) mjb.sh run-mjb.sh \
 		tests.txt \
-		/usr/local/share/domhub-testing
-	@cd /usr/local/share/domhub-testing; \
+		$(SHAREPATH)
+	@cd $(SHAREPATH); \
 		ln -f throughput-AB.sh throughput-A-results.sh; \
 		ln -f throughput-AB.sh throughput-B-results.sh
-	@mkdir -p /usr/local/bin
-	ln -f /usr/local/share/domhub-testing/run-mjb.sh /usr/local/bin/run-mjb
+	@mkdir -p $(BINPATH)
+	ln -f $(SHAREPATH)/run-mjb.sh $(BINPATH)/run-mjb
 
 spec-files:
-	@echo /usr/local/share/domhub-testing
-	@echo /usr/local/bin/run-mjb
+	@echo $(SHAREPATH)
+	@echo $(BINPATH)/run-mjb
 
