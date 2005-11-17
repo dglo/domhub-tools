@@ -36,6 +36,9 @@ release:
 	@scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
 	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
 	@cg tag rel-$(REL)
+	@cp .git/refs/tags/rel-$(REL) tags
+	@cg add tags/rel-$(REL)
+	@cg commit -m "release `cat rel.num`" tags/rel-$(REL)
 	@gzip -dc $(STB) | tar xf -
 	@(cd $(SRT) && cvs import -m "release `cat rel.num`" domhub-tools/rel-200 rel-2xx rel-$(REL))
 	@rm -rf $(SRT)
