@@ -62,7 +62,7 @@ static int docmd(int rfd, int wfd, const char *nm) {
       
          while (poll(fds, 1, 0)>0) {
             char b[4092];
-            read(rfd, b, sizeof(b));
+            if (read(rfd, b, sizeof(b))<0) { break; }
          }
       }
      
@@ -102,7 +102,7 @@ static int docmd(int rfd, int wfd, const char *nm) {
       for (i=0; i<nfds; i++) {
          char buf[4092];
          
-         if (fds[i].fd==rfd && (fds[i].revents & (POLLIN|POLLHUP))) {
+         if (fds[i].fd==rfd && (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
             /* the dom is talking -- push it along... */
             int nr = read(rfd, buf, sizeof(buf));
 
@@ -134,9 +134,17 @@ static int docmd(int rfd, int wfd, const char *nm) {
                write(wfd, buf, nr);
             }
          }
-         else if (fds[i].fd==sfds[0] && (fds[i].revents & (POLLIN|POLLHUP))) {
+         else if (fds[i].fd==sfds[0] && 
+                  (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
             int sig;
-            read(sfds[0], &sig, sizeof(sig));
+            const int nr = read(sfds[0], &sig, sizeof(sig));
+
+            if (nr<=0) {
+               fprintf(stderr, "domterm: error in signal pipe\n");
+               ret=1;
+               done=1;
+            }
+            
             if (sig!=SIGCHLD) ret = 1;
 	    //fprintf(stderr, "rcved: %d\r\n", sig);  fflush(stderr);
             if (sig==SIGSTOP) { }
@@ -301,7 +309,7 @@ int main(int argc, char *argv[]) {
       }
 
       /* read from dom... */
-      if (fds[0].revents&POLLIN) {
+      if (fds[0].revents&(POLLIN|POLLERR|POLLHUP)) {
          int nr = read(rfd, buf, sizeof(buf));
          if (nr<0) {
             error("read dom");
