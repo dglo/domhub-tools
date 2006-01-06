@@ -35,6 +35,7 @@ $(STB): clean
 release:
 	@scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
 	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
+	@scp $(RPM) arthur@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
 	@cg tag rel-$(REL)
 	@cp .git/refs/tags/rel-$(REL) tags
 	@cg add tags/rel-$(REL)
