@@ -1,3 +1,15 @@
+Release 204
+
+* syntax error in reldall fixed
+* less debugging in reldall
+
+--------------------------------------------
+Release 203
+
+* add reldall and reldcwd
+* domserv has better support for my dor driver
+
+--------------------------------------------
 Release 202
 
 * domterm now handles POLLERR
