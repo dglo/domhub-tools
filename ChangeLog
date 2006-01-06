@@ -1,3 +1,8 @@
+Release 202
+
+* domterm now handles POLLERR
+
+--------------------------------------------
 Release 201
 
 * set rpm build root correctly
