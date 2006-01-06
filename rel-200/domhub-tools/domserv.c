@@ -59,9 +59,18 @@ static int dhReqOutput = 0;
  */
 static int nserial(void) { return (servSerial) ? 2 : 0; }
 
+static int newapi(void) {
+   return access("/proc/dor", F_OK)==0;
+}
+
 static int isDORCard(int i) {
    char path[128];
-   sprintf(path, "/proc/driver/domhub/card%d", i);
+   if (newapi()) {
+      sprintf(path, "/proc/dor/%d", i);
+   }
+   else {
+      sprintf(path, "/proc/driver/domhub/card%d", i);
+   }
    return access(path, R_OK|X_OK)==0;
 }
 
@@ -262,10 +271,6 @@ static int forkDOM(DOMList *dl, const char *prog) {
    dl->slv = pid;
    dl->ifd = mfd;
    return 0;
-}
-
-static int newapi(void) {
-   return access("/proc/dor", F_OK)==0;
 }
 
 static int startDOR(DOMList *dl) {

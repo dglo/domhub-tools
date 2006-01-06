@@ -287,7 +287,7 @@ static int test(int *dfds, const char **doms, int ndoms, int nmsgs, int rdt,
 }
 
 static void usage(void) {
-   fprintf(stderr, "usage: echo-test [-t rate|-n nmsgs] doms...\n");
+   fprintf(stderr, "usage: echo-test [-t rate|-n nmsgs|-p pktsize] doms...\n");
 }
 
 /* use the dor api? */

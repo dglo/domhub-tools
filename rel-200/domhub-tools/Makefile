@@ -6,7 +6,8 @@ AWKS=tcal-cvt.awk tcal.awk
 SHS=configboot.sh domstate.sh echo-mode.sh \
 	iceboot.sh insrel.sh ldall.sh \
 	tcal-kalle.sh tcal-stf.sh tcal.sh versions.sh \
-	softboot.sh domhub-version.sh pwr.sh flash.sh ldfb.sh
+	softboot.sh domhub-version.sh pwr.sh flash.sh ldfb.sh \
+	reldall.sh reldcwd.sh
 CSHS=common.sh
 PROGS=se tcalcycle domserv domterm decodetcal rtcalc chkgps gps2a \
 	xmln xovr
