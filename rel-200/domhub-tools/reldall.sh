@@ -70,9 +70,9 @@ wait-till-dead 720000 $pidlist
 
 for dom in `cat ${ttf}`; do
     pid=`echo $dom | awk -vFS=':' '{ print $3; }'`
-    echo "checking dom: ${dom}"
     if ! wait ${pid};  then
         fn=`echo $dom | awk -vFS=':' '{ print $1; }'`
         d=`echo $dom | awk -vFS=':' '{ print $2; }'`
 	awk -vd=$d '{ print d, "FAIL> " $0; }' ${fn}
+    fi
 done
