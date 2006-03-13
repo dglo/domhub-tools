@@ -1,3 +1,8 @@
+Release 205
+
+* [issue #78] do not exit on in failed opens in domserv
+
+--------------------------------------------
 Release 204
 
 * syntax error in reldall fixed
