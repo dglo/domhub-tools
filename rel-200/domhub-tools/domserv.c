@@ -582,13 +582,13 @@ int main(int argc, char *argv[]) {
 
 	 if (openSlave(dl + i)) {
 	    fprintf(stderr, "can't start slave for DOM %d\n", i);
-	    return 1;
+            closeSlave(dl + i);
 	 }
 
 	 /* do we need to start listeners... */
 	 if (openListeners(dl + i)) {
 	    fprintf(stderr, "can't open sockets for DOM %d\n", i);
-	    return 1;
+            closeListeners(dl + i);
 	 }
       }
       
