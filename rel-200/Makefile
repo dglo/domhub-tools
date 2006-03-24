@@ -24,6 +24,8 @@ install:
 	done
 	install -D rel.num $(ROOT)/usr/local/share/domhub-tools/rel.num
 
+stb: $(STB)
+
 $(STB): clean
 	@if [[ ! -f rel.num ]]; then echo 100 > rel.num; fi
 	@mkdir $(SRT)

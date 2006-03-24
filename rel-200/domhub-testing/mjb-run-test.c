@@ -1,4 +1,4 @@
-/* mjb-run-test, run a mjb test...
+/* mjb-run-test, run an mjb test...
  *
  * arguments: $1 command to run, $2 dom, $3 timeout
  *
@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sched.h>
 
 #include "mjb-util.h"
 
@@ -92,36 +93,51 @@ static pid_t child(pid_t pid) {
    return ret;
 }
 
+/* the process can be dead or a zombie...
+ */
 static int isDead(pid_t pid) {
    char path[128];
+   int fd;
+   char line[4097];
+
    snprintf(path, sizeof(path), "/proc/%u/stat", (unsigned) pid);
-   return access(path, R_OK);
+
+   if ((fd = open(path, O_RDONLY))<0) {
+      return 1;
+   }
+
+   memset(line, 0, sizeof(line));
+   if (read(fd, line, sizeof(line)-1)>0) {
+      char *t = strchr(line, ')');
+      if (t==NULL || t[1]!=' ' || t[2]=='Z') {
+         close(fd);
+         return 1;
+      }
+   }
+   close(fd);
+   return 0;
 }
 
 /* send a signal to pid and all it's descendents,
  * we send to the leaves first, then move inward...
- *
- * we assume that this process is not generating
- * children faster than we can kill them...
  */
 static void massacre(pid_t pid) {
-   int i;
    pid_t ch;
 
-   /* kill children first... */
-   while ((ch = child(pid)) != (pid_t) -1) massacre(ch);
+   /* first stop this process... */
+   kill(pid, SIGSTOP);
+
+   /* descend... */
+   while ((ch = child(pid)) != (pid_t) -1 && !isDead(ch)) massacre(ch);
 
    /* now we must kill this pid until it's all the way dead! */
-   kill(pid, SIGTERM);
-   for (i=0; i<100 && !isDead(pid); i++) poll(NULL, 0, 10);
-
-   /* now it is really dead... */
-   if (!isDead(pid)) kill(pid, SIGKILL);
-   for (i=0; i<100 && !isDead(pid); i++) poll(NULL, 0, 10);
-   if (!isDead(pid)) {
-      fprintf(stderr, "mjb-run-test: massacre: %lu did not die!\n",
-              (unsigned long) pid);
+   if (kill(pid, SIGKILL)<0) {
+      perror("mjb-run-test: massacre: kill");
+      return;
    }
+   
+   /* wait forever... */
+   while (!isDead(pid)) sched_yield();
 }
 
 /* get the timeout for a test or -1 on error...
@@ -228,7 +244,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "mjb-run-test: unable to find test '%s'\n", testName);
       return 1;
    }
-   
+
    if (pipe(pfds)<0) {
       perror("mjb-run-test: pipe");
       return 104;
@@ -238,7 +254,7 @@ int main(int argc, char *argv[]) {
    signal(SIGALRM, sighandler);
    signal(SIGCHLD, sighandler);
    signal(SIGTERM, sighandler);
- 
+
    /* run the mode setting program... */
    {  const int ret = runWithTimeout(test->mode, dom, 60, pfds[0], 1);
       if (ret!=0) {
@@ -247,11 +263,11 @@ int main(int argc, char *argv[]) {
          return ret;
       }
    }
-   
+
    /* run the actual test script... */
    {  char testScript[128];
       int ret;
-   
+
       snprintf(testScript, sizeof(testScript), "./%s-test.sh", test->test);
       ret = runWithTimeout(testScript, dom, test->timeout, pfds[0], 0);
       if (ret!=0) {
