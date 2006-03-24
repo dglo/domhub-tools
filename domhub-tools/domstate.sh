@@ -48,7 +48,7 @@ if [[ -d /proc/dor ]]; then
 	printf '%d:%s\n' $! ${dom}
     done > /tmp/ds.$$.pids
     pidlist=`cat /tmp/ds.$$.pids | sed 's/:.*$//1'`
-    wait-till-dead 2000 ${pidlist}
+    wait-till-dead 5000 ${pidlist}
 
     for pid in `cat /tmp/ds.$$.pids`; do
 	dom=`echo ${pid} | sed 's/^.*://1'`
