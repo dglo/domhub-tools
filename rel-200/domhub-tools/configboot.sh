@@ -32,7 +32,7 @@ if (( `echo ${ncbdoms} | wc -c` > 0 )); then
 	   se ${dom} >& /dev/null ) & echo $!
     done`
 
-    wait-till-dead 2000 ${cbpids}
+    wait-till-dead 5000 ${cbpids}
 fi
 
 # for compatibility...
