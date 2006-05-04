@@ -13,22 +13,6 @@ if ! domstate $2 | grep 'iceboot$' > /dev/null; then
     exit 1
 fi
 
-#
-# make sure we the proper version
-#
-release=`echo 'send "release\r"\nexpect "^> "\n' | se $2 | tr -d '\r' | \
-	awk '$1 ~ /^az-prod$/ { print $2; }'`
-
-if (( ${#release} == 0 )); then
-    echo "`basename $0`: we need dom-mb release 404 or better"
-    exit 1
-fi
-
-if (( ${release} < 404 )); then
-    echo "`basename $0`: we need dom-mb release 404 or better"
-    exit 1
-fi
-
 if ! gzip -t $1 >& /dev/null; then
     echo "`basename $0`: $1 is not a valid gzip archive"
     exit 1
