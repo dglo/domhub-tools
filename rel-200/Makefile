@@ -18,7 +18,7 @@ clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
 
 install:
-	@if [[ ! -d $(BINPATH) ]]; then mkdir $(BINPATH); fi
+	@if [[ ! -d $(BINPATH) ]]; then mkdir -p $(BINPATH); fi
 	@for dir in $(SUBDIRS); do \
 		(cd $$dir && make ROOT=$(ROOT) install ); \
 	done

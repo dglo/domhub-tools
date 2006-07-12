@@ -1,3 +1,13 @@
+Release 208 [2006-07-12]:
+
+* [issue #560] support 104q fw in mjb tests...
+
+-----------------------------------------------------------------------------
+Release 207 [2006-05-04]:
+
+* [issue #332] remove dom version check in reldcwd
+
+-----------------------------------------------------------------------------
 Release 206 [2006-03-24]:
 
 * [issue #121] a better massacre in mjb-run-test
