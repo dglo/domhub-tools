@@ -73,7 +73,7 @@ fi
 #
 # check for crc errors...
 #
-if (( `awk '{ print $7; }' $1 | sort -n -r | uniq | sed -n '1p'` > 1 )); then
+if (( `awk '{ print $7; }' $1 | sort -n -r | uniq | sed -n '1p'` > 100 )); then
 	echo "throughput-all: too many crc errors"
 	exit 1
 fi
