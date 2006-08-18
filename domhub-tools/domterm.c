@@ -26,6 +26,23 @@ static int tcSaved = 0;
 static void syncsig(int sig) { write(sfds[1], &sig, sizeof(sig)); }
 static void sighand(int sig) { syncsig(sig); }
 
+static int writeFully(int fd, void *b, int n) {
+   int nw = 0;
+   char *buf = (char *) b;
+               
+   while (nw<n) {
+      int w = write(fd, buf + nw, n - nw);
+      if (w<0) {
+         perror("write fully");
+         return w;
+      }
+      else if (w==0) break;
+      else nw += w;
+   }
+
+   return nw;
+}
+
 /* exec a command, stdin/stdout on cmd are piped
  * through to rfd and wfd -- why piped and not
  * just passed?  well, the driver only takes
@@ -52,8 +69,8 @@ static int docmd(int rfd, int wfd, const char *nm) {
       return 1;
    }
    else if (pid==0) {
-      close(0); dup(wfds[0]);
-      close(1); dup(rfds[1]);
+      close(0); dup(wfds[0]); close(wfds[0]);
+      close(1); dup(rfds[1]); close(rfds[1]);
 
       /* toss pending data... */
       {
@@ -71,6 +88,11 @@ static int docmd(int rfd, int wfd, const char *nm) {
          const char *env[] = { "BASH_ENV=~/.bashrc", NULL }; 
          if (execle("/bin/bash", "bash", "-c", nm, NULL, env)<0) return 1;
       }
+   }
+   else {
+      /* parent... */
+      close(wfds[0]);
+      close(rfds[1]);
    }
 
    /* process data... */
@@ -114,7 +136,7 @@ static int docmd(int rfd, int wfd, const char *nm) {
             }
             else {
                /* forward data along to program... */
-               write(wfds[1], buf, nr);
+               writeFully(wfds[1], buf, nr);
             }
          }
          else if (fds[i].fd==rfds[0] && (fds[i].revents & (POLLIN|POLLHUP))) {
@@ -126,13 +148,14 @@ static int docmd(int rfd, int wfd, const char *nm) {
                
                /* program closed connection! */
                close(rfds[0]); rfds[0]=-1;
-               close(rfds[1]); rfds[1]=-1;
-               close(wfds[0]); wfds[0]=-1;
                close(wfds[1]); wfds[1]=-1;
+
+               /* we finish up when program is done... */
+               done = 1;
             }
             else {
                /* forward data along to dom... */
-               write(wfd, buf, nr);
+               writeFully(wfd, buf, nr);
             }
          }
          else if (fds[i].fd==sfds[0] && 
@@ -148,8 +171,6 @@ static int docmd(int rfd, int wfd, const char *nm) {
             
             if (sig!=SIGCHLD) ret = 1;
 	    //fprintf(stderr, "rcved: %d\r\n", sig);  fflush(stderr);
-            if (sig==SIGSTOP) { }
-	    else done = 1;
          }
       }
    }
