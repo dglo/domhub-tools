@@ -57,8 +57,8 @@ static int docmd(int rfd, int wfd, const char *nm) {
    int rfds[2];
    int wfds[2];
    pid_t pid;
-   int done = 0;
    int ret = 0;
+   int alive = 1;
    
    if (pipe(rfds)<0) return 1;
    if (pipe(wfds)<0) return 1;
@@ -96,12 +96,16 @@ static int docmd(int rfd, int wfd, const char *nm) {
    }
 
    /* process data... */
-   while (!done) {
+   while (alive || rfds[0]!=-1) {
       struct pollfd fds[3];
       int nfds = 0;
       int i;
 
-      if (rfd!=-1) {
+      fds[nfds].fd = sfds[0];
+      fds[nfds].events = POLLIN;
+      nfds++;
+
+      if (rfd!=-1 && alive) {
          fds[nfds].fd = rfd;
          fds[nfds].events = POLLIN;
          nfds++;
@@ -111,9 +115,6 @@ static int docmd(int rfd, int wfd, const char *nm) {
          fds[nfds].events = POLLIN;
          nfds++;
       }
-      fds[nfds].fd = sfds[0];
-      fds[nfds].events = POLLIN;
-      nfds++;
       
       if (poll(fds, nfds, -1)<0) {
          /* FIXME: better error handling... */
@@ -124,8 +125,25 @@ static int docmd(int rfd, int wfd, const char *nm) {
       
       for (i=0; i<nfds; i++) {
          char buf[4092];
-         
-         if (fds[i].fd==rfd && (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
+
+         /* important!!! process signals first! */
+         if (fds[i].fd==sfds[0] && 
+             (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
+            int sig;
+            const int nr = read(sfds[0], &sig, sizeof(sig));
+
+            if (nr<=0) {
+               fprintf(stderr, "domterm: error in signal pipe\n");
+               ret=1;
+               exit(1);
+            }
+            
+            if (sig==SIGCHLD) alive = 0;
+            else ret = 1;
+	    //fprintf(stderr, "rcved: %d\r\n", sig);  fflush(stderr);
+         }
+         else if (alive && fds[i].fd==rfd && 
+                  (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
             /* the dom is talking -- push it along... */
             int nr = read(rfd, buf, sizeof(buf));
 
@@ -149,28 +167,11 @@ static int docmd(int rfd, int wfd, const char *nm) {
                /* program closed connection! */
                close(rfds[0]); rfds[0]=-1;
                close(wfds[1]); wfds[1]=-1;
-
-               /* we finish up when program is done... */
-               done = 1;
             }
             else {
                /* forward data along to dom... */
                writeFully(wfd, buf, nr);
             }
-         }
-         else if (fds[i].fd==sfds[0] && 
-                  (fds[i].revents & (POLLIN|POLLHUP|POLLERR))) {
-            int sig;
-            const int nr = read(sfds[0], &sig, sizeof(sig));
-
-            if (nr<=0) {
-               fprintf(stderr, "domterm: error in signal pipe\n");
-               ret=1;
-               done=1;
-            }
-            
-            if (sig!=SIGCHLD) ret = 1;
-	    //fprintf(stderr, "rcved: %d\r\n", sig);  fflush(stderr);
          }
       }
    }
