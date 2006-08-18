@@ -34,7 +34,7 @@ if [[ -d /proc/dor ]]; then
     doms=`echo ${doms} | tr ' ' '\n' | sort | \
 	join -1 1 -2 1 - /tmp/ds.$$.status | \
 	awk \
-	'/^[0-7][0-3][AB] communicating no-hw-timeout closed$/ { print $1; }' \
+	'/^[0-7][0-3][AB] communicating no-hw-timeout closed/ { print $1; }' \
 	| tr '\n' ' ' | sed 's/ $//1'`
 
     #
