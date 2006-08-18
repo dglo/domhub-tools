@@ -1,3 +1,12 @@
+Release 209 [2006-08-18]:
+
+* [issue #562] rpm build script is broken...
+* [issue #626] domterm is using the wrong synchronous signal fd
+* [issue #628] domstate script does not handle new dor api
+* [issue #648] domterm does not handle signals correctly in linux 2.6
+* [issue #648] domterm does not handle signals correctly in linux 2.6 --
+
+-----------------------------------------------------------------------------
 Release 208 [2006-07-12]:
 
 * [issue #560] support 104q fw in mjb tests...
