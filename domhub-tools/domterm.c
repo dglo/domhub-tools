@@ -23,7 +23,8 @@ static int sfds[2];
 static struct termios tiosave;  /* command tio */
 static int tcSaved = 0;
 
-static void sighand(int sig) { write(sfds[1], &sig, sizeof(sig)); }
+static void syncsig(int sig) { write(sfds[1], &sig, sizeof(sig)); }
+static void sighand(int sig) { syncsig(sig); }
 
 /* exec a command, stdin/stdout on cmd are piped
  * through to rfd and wfd -- why piped and not
@@ -299,7 +300,7 @@ int main(int argc, char *argv[]) {
       fds[0].events = POLLIN;
       fds[1].fd = 0;
       fds[1].events = POLLIN;
-      fds[2].fd = sfds[1];
+      fds[2].fd = sfds[0];
       fds[2].events = POLLIN;
       
       if (poll(fds, 3, -1)<0) {
@@ -443,8 +444,7 @@ int main(int argc, char *argv[]) {
                               strcmp(line, "qui")==0 ||
                               strcmp(line, "quit")==0) {
                         /* exit program... */
-                        int sig = SIGTERM;
-                        write(sfds[1], &sig, sizeof(sig));
+                        syncsig(SIGTERM);
                         break;
                      }
                      else if (!found) {
