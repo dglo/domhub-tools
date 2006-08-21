@@ -35,19 +35,20 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-	@scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
-	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
-	@scp $(RPM) arthur@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
-	@cg tag rel-$(REL)
-	@cp .git/refs/tags/rel-$(REL) tags
-	@cg add tags/rel-$(REL)
-	@cg commit -m "release `cat rel.num`" tags/rel-$(REL)
-	@gzip -dc $(STB) | tar xf -
-	@(cd $(SRT) && cvs import -m "release `cat rel.num`" domhub-tools/rel-200 rel-2xx rel-$(REL))
-	@rm -rf $(SRT)
+#       @scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
+#	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
+	@scp $(RPM) jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
+#	@cg tag rel-$(REL)
+#	@cp .git/refs/tags/rel-$(REL) tags
+#	@cg add tags/rel-$(REL)
+#	@cg commit -m "release `cat rel.num`" tags/rel-$(REL)
+	@cvs tag rel-$(REL)
+#	@gzip -dc $(STB) | tar xf -
+#	@(cd $(SRT) && cvs import -m "release `cat rel.num`" domhub-tools/rel-200 rel-2xx rel-$(REL))
+#	@rm -rf $(SRT)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
-	@scp ChangeLog arthur@glacier.lbl.gov:public_html/domhub-tools
+	@scp ChangeLog jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
 
 rpm: $(RPM)
 
@@ -59,7 +60,8 @@ spec-header:
 	@echo "Name: domhub-tools" >> $(SPEC)
 	@echo "Version: `cat rel.num`" >> $(SPEC)
 	@echo "Release: 1" >> $(SPEC)
-	@echo "Copyright: GPL" >> $(SPEC)
+#	@echo "Copyright: GPL" >> $(SPEC)
+	@echo "License: GPL" >> $(SPEC)
 	@echo "Group: Applications/System" >> $(SPEC)
 	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
 	@echo "BuildRoot: /tmp/domhub-tools" >> $(SPEC)
