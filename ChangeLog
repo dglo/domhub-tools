@@ -5,6 +5,7 @@ Release 209 [2006-08-18]:
 * [issue #628] domstate script does not handle new dor api
 * [issue #648] domterm does not handle signals correctly in linux 2.6
 * [issue #648] domterm does not handle signals correctly in linux 2.6 --
+* [issue #654] yank out git stuff and fix Copyright->License tag for "make rpm"
 
 -----------------------------------------------------------------------------
 Release 208 [2006-07-12]:
