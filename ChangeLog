@@ -2,6 +2,7 @@ Release 210 [2006-09-15]:
 
 * [issue #712] mjb fpga-reload test fails in RHEL 4
 * [issue #713] increment and commit rel.num properly in new build scheme
+* [issue #714] release notes not showing up on glacier release webpage
 	
 -----------------------------------------------------------------------------
 Release 209 [2006-08-18]:
