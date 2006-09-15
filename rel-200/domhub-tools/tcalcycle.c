@@ -9,9 +9,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <linux/types.h>
-#include "dh_tcalib.h"
-
 static void usage(void) {
    fprintf(stderr, "usage: tcalcycle [-iter n] CWD\n");
    fprintf(stderr, "  where CWD is card, wirepair, dom\n");
@@ -127,30 +124,34 @@ int main(int argc, char *argv[]) {
          }
 
          {
-             struct dh_tcalib_t tcbuf;
-             unsigned char tcbuf_packed[DH_TCAL_STRUCT_LEN];
-             int ntries;
-             for (ntries=0; ntries<1000; ntries++) {
-                 poll(NULL, 0, 10);
-                 if (read(fd, tcbuf_packed, DH_TCAL_STRUCT_LEN)==DH_TCAL_STRUCT_LEN) break;                 
-             }
-             if (ntries==1000) {
-                 fprintf(stderr, "can't read tcal info from proc file\n");
-                 return 1;
-             }
-             if (! dh_tcalib_unpack(&tcbuf, tcbuf_packed)) {
-                 fprintf(stderr, "couldn't unpack time calibration data\n");
-                 return 1;
-             }
-             
-             printf("DOM_%c%c_TCAL_round_trip_%06d\n",
-                    argv[ai][1], tolower(argv[ai][2]), i+1);
-             printf("dor_tx_time %llu\n", tcbuf.dor_t0);
-             printf("dor_rx_time %llu\n", tcbuf.dor_t3);
-             for (j=0; j<48; j++) printf("dor_%02d %d\n", j, tcbuf.dorwf[j]);
-             printf("dom_tx_time %llu\n", tcbuf.dom_t2);
-             printf("dom_rx_time %llu\n", tcbuf.dom_t1);
-             for (j=0; j<48; j++) printf("dom_%02d %d\n", j, tcbuf.domwf[j]);
+            struct {
+               unsigned hdr;
+               unsigned long long dor_t0;
+               unsigned long long dor_t3;
+               unsigned short dorwf[64];
+               unsigned long long dom_t1;
+               unsigned long long dom_t2;
+               unsigned short domwf[64];
+            } tcbuf;
+            int ntries;
+            for (ntries=0; ntries<1000; ntries++) {
+               poll(NULL, 0, 10);
+               
+               if (read(fd, &tcbuf, sizeof(tcbuf))==sizeof(tcbuf)) break;
+            }
+            if (ntries==1000) {
+               fprintf(stderr, "can't read tcal info from proc file\n");
+               return 1;
+            }
+            
+            printf("DOM_%c%c_TCAL_round_trip_%06d\n",
+                   argv[ai][1], tolower(argv[ai][2]), i+1);
+            printf("dor_tx_time %llu\n", tcbuf.dor_t0);
+            printf("dor_rx_time %llu\n", tcbuf.dor_t3);
+            for (j=0; j<48; j++) printf("dor_%02d %d\n", j, tcbuf.dorwf[j]);
+            printf("dom_tx_time %llu\n", tcbuf.dom_t2);
+            printf("dom_rx_time %llu\n", tcbuf.dom_t1);
+            for (j=0; j<48; j++) printf("dom_%02d %d\n", j, tcbuf.domwf[j]);
          }
          close(fd);
       }

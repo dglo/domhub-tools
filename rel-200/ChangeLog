@@ -1,38 +1,8 @@
-Release 216 [2015-08-19]:
-* [issue #7474] Makefile points to /net/user
-* [issue #7473] reldall: command-line parsing fails if more than 10
-	arguments
-
-Release 215 [2014-04-23]:
-* [issue #6937] Add ability to exclude DOMs from reldall.sh
-
-Release 214 [2013-11-21]:
-* [issue #6728] tcalcycle readout fails on 64-bit OS
-
-Release 213 [2013-06-28]:
-* [issue #6590] domhub-testing: RPM doesn't included required common files
-* [issue #6585] ARCH is hardcoded in RPM generation
-
-Release 212 [2012-09-06]:
-
-* [issue #5956] reldall/se: domterm sometimes dies at end of upload
-* [issue #5954] reldcwd: check status of gunzip
-* [issue #5945] reldall: echo hostname on DOM upload failures
-
-Release 211 [2011-07-19]:
-
-* [issue #5031] fix broken 'make release' target
-* [issue #5027] RPM build no longer works
-* [issue #5020] Timeout too short in se.c makes MJB tests fail on SL 5.5
-* [issue #1921] Add "ID" version of "versions" script
-* [issue #1734] move glacier releases page/directory to UW
-
 Release 210 [2006-09-15]:
 
 * [issue #712] mjb fpga-reload test fails in RHEL 4
 * [issue #713] increment and commit rel.num properly in new build scheme
-* [issue #714] release notes not showing up on glacier release webpage
-
+	
 -----------------------------------------------------------------------------
 Release 209 [2006-08-18]:
 
