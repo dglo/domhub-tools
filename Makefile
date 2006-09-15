@@ -48,7 +48,7 @@ release:
 #	@rm -rf $(SRT)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
-        @cvs commit -m "incremented" rel.num
+	@cvs commit -m "incremented" rel.num
 	@scp ChangeLog jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
 
 rpm: $(RPM)
