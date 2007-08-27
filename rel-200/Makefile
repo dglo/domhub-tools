@@ -37,7 +37,8 @@ $(STB): clean
 release:
 #       @scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
 #	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
-	@scp $(RPM) jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
+	cp $(RPM) /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx
+	cp ChangeLog /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
 #	@cg tag rel-$(REL)
 #	@cp .git/refs/tags/rel-$(REL) tags
 #	@cg add tags/rel-$(REL)
@@ -49,7 +50,6 @@ release:
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
 	@cvs commit -m "incremented" rel.num
-	@scp ChangeLog jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx/RELEASE_NOTES
 
 rpm: $(RPM)
 
@@ -64,7 +64,7 @@ spec-header:
 #	@echo "Copyright: GPL" >> $(SPEC)
 	@echo "License: GPL" >> $(SPEC)
 	@echo "Group: Applications/System" >> $(SPEC)
-	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
+#	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
 	@echo "BuildRoot: /tmp/domhub-tools" >> $(SPEC)
 
 spec-description:
