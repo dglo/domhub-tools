@@ -1,4 +1,5 @@
 Next:
+* [issue #5020] Timeout too short in se.c makes MJB tests fail on SL 5.5
 * [issue #1921] Add "ID" version of "versions" script
 * [issue #1734] move glacier releases page/directory to UW
 	

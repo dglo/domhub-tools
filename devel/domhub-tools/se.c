@@ -254,7 +254,7 @@ int main(int argc, char *argv[]) {
    }
 
    /* wait a bit for input to flush... */
-   flushInput(master, 100);
+   flushInput(master, 500);
 
    /* finish up domterm... */
    cleaningUp = 1;
