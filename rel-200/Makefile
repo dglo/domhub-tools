@@ -77,7 +77,7 @@ spec-prep:
 	@echo " " >> $(SPEC)
 	@echo "%prep" >> $(SPEC)
 	@echo "%setup" >> $(SPEC)
-
+	@echo "%define _unpackaged_files_terminate_build 0" >> $(SPEC)
 spec-build:
 	@echo " " >> $(SPEC)
 	@echo "%build" >> $(SPEC)
@@ -95,13 +95,7 @@ spec-clean:
 spec-files:
 	@echo " " >> $(SPEC)
 	@echo "%files" >> $(SPEC)
-#	@for r in *; do echo "/$$r"; done >> $(SPEC)
-	@echo "/ChangeLog" >> $(SPEC)
-	@echo "/Makefile" >> $(SPEC)
-	@echo "/rel.num" >> $(SPEC)
-	@echo "/domhub-tools.description" >> $(SPEC)
-	@echo "/$(SRT).tar.gz" >> $(SPEC)
-	@for r in $(SUBDIRS); do echo "/$$r"; done >> $(SPEC)
+#	@echo "/$(SRT).tar.gz" >> $(SPEC)
 	@for s in $(SUBDIRS); do (make -C $$s -s spec-files); done >> $(SPEC)
 
 spec-changelog:
