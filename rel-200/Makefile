@@ -64,7 +64,8 @@ spec-header:
 #	@echo "Copyright: GPL" >> $(SPEC)
 	@echo "License: GPL" >> $(SPEC)
 	@echo "Group: Applications/System" >> $(SPEC)
-#	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
+#	@echo "Source0: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
+	@echo "Source0: domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
 	@echo "BuildRoot: /tmp/domhub-tools" >> $(SPEC)
 
 spec-description:
@@ -94,6 +95,13 @@ spec-clean:
 spec-files:
 	@echo " " >> $(SPEC)
 	@echo "%files" >> $(SPEC)
+#	@for r in *; do echo "/$$r"; done >> $(SPEC)
+	@echo "/ChangeLog" >> $(SPEC)
+	@echo "/Makefile" >> $(SPEC)
+	@echo "/rel.num" >> $(SPEC)
+	@echo "/domhub-tools.description" >> $(SPEC)
+	@echo "/$(SRT).tar.gz" >> $(SPEC)
+	@for r in $(SUBDIRS); do echo "/$$r"; done >> $(SPEC)
 	@for s in $(SUBDIRS); do (make -C $$s -s spec-files); done >> $(SPEC)
 
 spec-changelog:
