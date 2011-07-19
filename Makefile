@@ -109,6 +109,6 @@ spec-changelog:
 	@echo "%changelog" >> $(SPEC)
 	@echo "* release `cat rel.num`" >> $(SPEC)
 
-$(RPM): $(STB) $(SPEC) rhdirs
+$(RPM): rhdirs $(STB) $(SPEC) 
 	@cp $(STB) $(RPMDIR)/SOURCES
 	(cd $(RPMDIR)/SPECS; rpmbuild -ba $(SPEC))
