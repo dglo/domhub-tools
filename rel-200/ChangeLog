@@ -1,4 +1,6 @@
-Next:
+Release 211 [2011-07-19]:
+
+* [issue #5031] fix broken 'make release' target
 * [issue #5027] RPM build no longer works
 * [issue #5020] Timeout too short in se.c makes MJB tests fail on SL 5.5
 * [issue #1921] Add "ID" version of "versions" script
