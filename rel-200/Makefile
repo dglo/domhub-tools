@@ -3,7 +3,7 @@ REL=$(shell cat rel.num)
 SRT=domhub-tools-$(REL)
 # hmmm... redhat and debian have this in different places...
 #RPMDIR=/usr/src/rpm
-RPMDIR=/usr/src/redhat
+RPMDIR=~/redhat
 RPM=$(RPMDIR)/RPMS/i386/$(SRT)-1.i386.rpm
 SPEC=$(RPMDIR)/SPECS/domhub-tools.spec
 STB=$(SRT).tar.gz
@@ -13,6 +13,12 @@ BINPATH=$(ROOT)/usr/local/bin
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
+
+rhdirs:
+	mkdir -p $(RPMDIR)
+	for dir in SPECS SOURCES BUILD RPMS SRPMS ; do \
+		mkdir -p $(RPMDIR)/$$dir; \
+	done
 
 clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
@@ -35,21 +41,12 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-#       @scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
-#	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
-	@scp $(RPM) jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
-#	@cg tag rel-$(REL)
-#	@cp .git/refs/tags/rel-$(REL) tags
-#	@cg add tags/rel-$(REL)
-#	@cg commit -m "release `cat rel.num`" tags/rel-$(REL)
-	@cvs tag rel-$(REL)
-#	@gzip -dc $(STB) | tar xf -
-#	@(cd $(SRT) && cvs import -m "release `cat rel.num`" domhub-tools/rel-200 rel-2xx rel-$(REL))
-#	@rm -rf $(SRT)
+	cp $(RPM) /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx
+	cp ChangeLog /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
+	@svn tag rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
-	@cvs commit -m "incremented" rel.num
-	@scp ChangeLog jacobsen@glacier.lbl.gov:/var/www/html/releases/domhub-tools/rel-2xx
+	@svn commit -m "incremented" rel.num
 
 rpm: $(RPM)
 
@@ -64,7 +61,8 @@ spec-header:
 #	@echo "Copyright: GPL" >> $(SPEC)
 	@echo "License: GPL" >> $(SPEC)
 	@echo "Group: Applications/System" >> $(SPEC)
-	@echo "Source: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
+#	@echo "Source0: http://glacier.lbl.gov/\~arthur/domhub-tools/domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
+	@echo "Source0: domhub-tools-`cat rel.num`.tar.gz" >> $(SPEC)
 	@echo "BuildRoot: /tmp/domhub-tools" >> $(SPEC)
 
 spec-description:
@@ -76,7 +74,7 @@ spec-prep:
 	@echo " " >> $(SPEC)
 	@echo "%prep" >> $(SPEC)
 	@echo "%setup" >> $(SPEC)
-
+	@echo "%define _unpackaged_files_terminate_build 0" >> $(SPEC)
 spec-build:
 	@echo " " >> $(SPEC)
 	@echo "%build" >> $(SPEC)
@@ -94,6 +92,7 @@ spec-clean:
 spec-files:
 	@echo " " >> $(SPEC)
 	@echo "%files" >> $(SPEC)
+#	@echo "/$(SRT).tar.gz" >> $(SPEC)
 	@for s in $(SUBDIRS); do (make -C $$s -s spec-files); done >> $(SPEC)
 
 spec-changelog:
@@ -101,6 +100,6 @@ spec-changelog:
 	@echo "%changelog" >> $(SPEC)
 	@echo "* release `cat rel.num`" >> $(SPEC)
 
-$(RPM): $(STB) $(SPEC)
+$(RPM): rhdirs $(STB) $(SPEC) 
 	@cp $(STB) $(RPMDIR)/SOURCES
 	(cd $(RPMDIR)/SPECS; rpmbuild -ba $(SPEC))

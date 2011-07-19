@@ -1,7 +1,16 @@
+Release 211 [2011-07-19]:
+
+* [issue #5031] fix broken 'make release' target
+* [issue #5027] RPM build no longer works
+* [issue #5020] Timeout too short in se.c makes MJB tests fail on SL 5.5
+* [issue #1921] Add "ID" version of "versions" script
+* [issue #1734] move glacier releases page/directory to UW
+	
 Release 210 [2006-09-15]:
 
 * [issue #712] mjb fpga-reload test fails in RHEL 4
 * [issue #713] increment and commit rel.num properly in new build scheme
+* [issue #714] release notes not showing up on glacier release webpage
 	
 -----------------------------------------------------------------------------
 Release 209 [2006-08-18]:
