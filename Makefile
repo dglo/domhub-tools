@@ -41,21 +41,12 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-#       @scp $(STB) arthur@glacier.lbl.gov:public_html/domhub-tools
-#	@scp $(RPM) arthur@glacier.lbl.gov:public_html/rpms
 	cp $(RPM) /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx
 	cp ChangeLog /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
-#	@cg tag rel-$(REL)
-#	@cp .git/refs/tags/rel-$(REL) tags
-#	@cg add tags/rel-$(REL)
-#	@cg commit -m "release `cat rel.num`" tags/rel-$(REL)
-	@cvs tag rel-$(REL)
-#	@gzip -dc $(STB) | tar xf -
-#	@(cd $(SRT) && cvs import -m "release `cat rel.num`" domhub-tools/rel-200 rel-2xx rel-$(REL))
-#	@rm -rf $(SRT)
+	@svn tag rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
-	@cvs commit -m "incremented" rel.num
+	@svn commit -m "incremented" rel.num
 
 rpm: $(RPM)
 
