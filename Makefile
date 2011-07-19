@@ -3,7 +3,7 @@ REL=$(shell cat rel.num)
 SRT=domhub-tools-$(REL)
 # hmmm... redhat and debian have this in different places...
 #RPMDIR=/usr/src/rpm
-RPMDIR=/usr/src/redhat
+RPMDIR=~/redhat
 RPM=$(RPMDIR)/RPMS/i386/$(SRT)-1.i386.rpm
 SPEC=$(RPMDIR)/SPECS/domhub-tools.spec
 STB=$(SRT).tar.gz
@@ -13,6 +13,12 @@ BINPATH=$(ROOT)/usr/local/bin
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
+
+rhdirs:
+	mkdir -p $(RPMDIR)
+	for dir in SPECS SOURCES BUILD RPMS SRPMS ; do \
+		mkdir -p $(RPMDIR)/$$dir; \
+	done
 
 clean:
 	@for dir in $(SUBDIRS); do (cd $$dir && make clean ); done
@@ -103,6 +109,6 @@ spec-changelog:
 	@echo "%changelog" >> $(SPEC)
 	@echo "* release `cat rel.num`" >> $(SPEC)
 
-$(RPM): $(STB) $(SPEC)
+$(RPM): $(STB) $(SPEC) rhdirs
 	@cp $(STB) $(RPMDIR)/SOURCES
 	(cd $(RPMDIR)/SPECS; rpmbuild -ba $(SPEC))
