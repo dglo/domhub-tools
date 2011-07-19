@@ -41,8 +41,8 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-	cp $(RPM) /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx
-	cp ChangeLog /net/usr/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
+	cp $(RPM) /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx
+	cp ChangeLog /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
 	@svn tag rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
