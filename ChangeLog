@@ -1,3 +1,9 @@
+Release 212 [2012-08-28]:
+
+* [issue #5956] reldall/se: domterm sometimes dies at end of upload
+* [issue #5954] reldcwd: check status of gunzip
+* [issue #5945] reldall: echo hostname on DOM upload failures
+	
 Release 211 [2011-07-19]:
 
 * [issue #5031] fix broken 'make release' target
