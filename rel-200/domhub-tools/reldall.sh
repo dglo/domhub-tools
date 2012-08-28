@@ -73,6 +73,7 @@ for dom in `cat ${ttf}`; do
     if ! wait ${pid};  then
         fn=`echo $dom | awk -vFS=':' '{ print $1; }'`
         d=`echo $dom | awk -vFS=':' '{ print $2; }'`
-	awk -vd=$d '{ print d, "FAIL> " $0; }' ${fn}
+        h=`hostname -s`
+        awk -vd=$d -vh=$h '{ print h, d, "FAIL> " $0; }' ${fn}
     fi
 done
