@@ -10,6 +10,8 @@ STB=$(SRT).tar.gz
 FILES=domhub-tools.description Makefile rel.num ChangeLog
 ROOT=
 BINPATH=$(ROOT)/usr/local/bin
+# Version control directories to exclude
+VCS=.svn
 
 all:
 	@for dir in $(SUBDIRS); do (cd $$dir && make ); done
@@ -35,7 +37,7 @@ stb: $(STB)
 $(STB): clean
 	@if [[ ! -f rel.num ]]; then echo 100 > rel.num; fi
 	@mkdir $(SRT)
-	@tar cf - $(SUBDIRS) $(FILES) | ( cd $(SRT); tar xf - )
+	@tar cf - $(SUBDIRS) $(FILES) --exclude=$(VCS) | ( cd $(SRT); tar xf - )
 	@tar cf - $(SRT) | gzip -c > $(STB)
 	@rm -rf $(SRT)
 	@echo created: $(STB)
