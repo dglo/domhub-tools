@@ -347,8 +347,12 @@ int main(int argc, char *argv[]) {
       if (fds[1].revents&(POLLIN|POLLHUP)) {
          int nr = read(0, buf, sizeof(buf));
          if (nr<0) {
-            perror("domterm: read stdin");
-            ret = 1;
+             ret = 0;
+             /* ignore EIO on hangup */
+             if (!(fds[1].revents&POLLHUP)) {
+                 perror("domterm: read stdin");
+                 ret = 1;
+             }
             break;
          }
          else if (nr==0) {
