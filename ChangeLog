@@ -1,3 +1,6 @@
+Release 213 [2013-XX-XX]:
+* [issue #6585] ARCH is hardcoded in RPM generation
+	
 Release 212 [2012-09-06]:
 
 * [issue #5956] reldall/se: domterm sometimes dies at end of upload
