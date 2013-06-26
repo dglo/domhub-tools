@@ -1,10 +1,9 @@
 SUBDIRS=domhub-tools domhub-testing
 REL=$(shell cat rel.num)
 SRT=domhub-tools-$(REL)
-# hmmm... redhat and debian have this in different places...
-#RPMDIR=/usr/src/rpm
-RPMDIR=~/redhat
-RPM=$(RPMDIR)/RPMS/i386/$(SRT)-1.i386.rpm
+RPMDIR=~/rpmbuild
+ARCH=$(shell arch)
+RPM=$(RPMDIR)/RPMS/$(ARCH)/$(SRT)-1.$(ARCH).rpm
 SPEC=$(RPMDIR)/SPECS/domhub-tools.spec
 STB=$(SRT).tar.gz
 FILES=domhub-tools.description Makefile rel.num ChangeLog
