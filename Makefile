@@ -44,7 +44,8 @@ $(STB): clean
 release:
 	cp $(RPM) /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx
 	cp ChangeLog /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
-	@svn tag rel-$(REL)
+	@svn cp `svn info|grep URL|cut -d ' ' -f 2` \
+		http://code.icecube.wisc.edu/daq/projects/domhub-tools/releases/rel-$(REL) -m rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
 	@svn commit -m "incremented" rel.num
@@ -93,6 +94,7 @@ spec-clean:
 spec-files:
 	@echo " " >> $(SPEC)
 	@echo "%files" >> $(SPEC)
+	@echo "%defattr(-, root, root, -)" >> $(SPEC)
 #	@echo "/$(SRT).tar.gz" >> $(SPEC)
 	@for s in $(SUBDIRS); do (make -C $$s -s spec-files); done >> $(SPEC)
 
