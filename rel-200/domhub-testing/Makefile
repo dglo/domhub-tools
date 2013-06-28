@@ -19,6 +19,7 @@ clean:
 	rm -f echo-test open-test mjb-run-test mjb-sched *.o
 
 BIN=echo-test open-test mjb-run-test mjb-sched
+
 TESTS=current-test.sh domid-test.sh echo-test.sh echo-throttle-test.sh \
 	fpga-reload-test.sh quiet-test.sh run-test.sh sink-test.sh \
 	slow-open-test.sh softboot-test.sh source-test.sh tcal-test.sh \
@@ -28,7 +29,10 @@ RESULTS=domid-results.sh quiet-results.sh softboot-results.sh \
 	throughput-all-results.sh throughput-AB.sh echo-results.sh \
 	echo-throttle-results.sh sink-results.sh source-results.sh \
 	tcal-results.sh
+
 QUERIES=details-qry.sh error-qry.sh even-schedule-qry.sh results-qry.sh
+
+COMMON=throughput-common.sh results-common.sh
 
 ROOT=
 BINPATH=$(ROOT)/usr/local/bin
@@ -36,7 +40,7 @@ SHAREPATH=$(ROOT)/usr/local/share/domhub-testing
 
 install: all
 	@mkdir -p $(SHAREPATH)
-	install -D $(BIN) $(TESTS) $(RESULTS) $(QUERIES) mjb.sh run-mjb.sh \
+	install -D $(BIN) $(TESTS) $(RESULTS) $(QUERIES) $(COMMON) mjb.sh run-mjb.sh \
 		tests.txt \
 		$(SHAREPATH)
 	@cd $(SHAREPATH); \
