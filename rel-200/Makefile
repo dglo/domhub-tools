@@ -52,6 +52,8 @@ release:
 
 rpm: $(RPM)
 
+spec: $(SPEC)
+
 $(SPEC): spec-header spec-description spec-prep spec-build spec-install \
 	spec-clean spec-files
 
