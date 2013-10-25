@@ -26,7 +26,7 @@ xmln: xmln.c
 se: se.o
 	gcc -g -o se se.o -lutil
 
-tcalcycle: tcalcycle.o
+tcalcycle: tcalcycle.o dh_tcalib.h
 	gcc -g -o tcalcycle tcalcycle.o
 
 decodetcal: decodetcal.o
