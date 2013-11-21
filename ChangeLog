@@ -1,3 +1,6 @@
+Release 214 [2013-11-21]:
+* [issue #6728]: tcalcycle readout fails on 64-bit OS
+	
 Release 213 [2013-XX-XX]:
 * [issue #6585] ARCH is hardcoded in RPM generation
 	
