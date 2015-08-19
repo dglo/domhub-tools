@@ -42,8 +42,8 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-	cp $(RPM) /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx
-	cp ChangeLog /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
+	cp $(RPM) /data/user/pdaq/packaged-releases/domhub-tools/rel-2xx
+	cp ChangeLog /data/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
 	@svn cp `svn info|grep URL|cut -d ' ' -f 2` \
 		http://code.icecube.wisc.edu/daq/projects/domhub-tools/releases/rel-$(REL) -m rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
