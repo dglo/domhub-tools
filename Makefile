@@ -1,10 +1,9 @@
 SUBDIRS=domhub-tools domhub-testing
 REL=$(shell cat rel.num)
 SRT=domhub-tools-$(REL)
-# hmmm... redhat and debian have this in different places...
-#RPMDIR=/usr/src/rpm
-RPMDIR=~/redhat
-RPM=$(RPMDIR)/RPMS/i386/$(SRT)-1.i386.rpm
+RPMDIR=~/rpmbuild
+ARCH=$(shell arch)
+RPM=$(RPMDIR)/RPMS/$(ARCH)/$(SRT)-1.$(ARCH).rpm
 SPEC=$(RPMDIR)/SPECS/domhub-tools.spec
 STB=$(SRT).tar.gz
 FILES=domhub-tools.description Makefile rel.num ChangeLog
@@ -43,14 +42,17 @@ $(STB): clean
 	@echo created: $(STB)
 
 release:
-	cp $(RPM) /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx
-	cp ChangeLog /net/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
-	@svn tag rel-$(REL)
+	cp $(RPM) /data/user/pdaq/packaged-releases/domhub-tools/rel-2xx
+	cp ChangeLog /data/user/pdaq/packaged-releases/domhub-tools/rel-2xx/RELEASE_NOTES
+	@svn cp `svn info|grep URL|cut -d ' ' -f 2` \
+		http://code.icecube.wisc.edu/daq/projects/domhub-tools/releases/rel-$(REL) -m rel-$(REL)
 	@echo "`cat rel.num` 1 + p" | dc > rel.num.2
 	@mv rel.num.2 rel.num
 	@svn commit -m "incremented" rel.num
 
 rpm: $(RPM)
+
+spec: $(SPEC)
 
 $(SPEC): spec-header spec-description spec-prep spec-build spec-install \
 	spec-clean spec-files
@@ -94,6 +96,7 @@ spec-clean:
 spec-files:
 	@echo " " >> $(SPEC)
 	@echo "%files" >> $(SPEC)
+	@echo "%defattr(-, root, root, -)" >> $(SPEC)
 #	@echo "/$(SRT).tar.gz" >> $(SPEC)
 	@for s in $(SUBDIRS); do (make -C $$s -s spec-files); done >> $(SPEC)
 
