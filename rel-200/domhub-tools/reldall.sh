@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 source /usr/local/share/domhub-tools/common.sh
@@ -19,7 +18,7 @@ host=${host#spts-}
 
 # Poor-man's getopt
 exclusions=()
-while [[ $# > 2 ]]
+while [ $# -gt 2 ]
 do
 key="$1"
 shift
